@@ -100,6 +100,41 @@ export async function unwrapContentKey(
   return importAesKey(new Uint8Array(raw));
 }
 
+/**
+ * Wrap the shared gate passphrase under shareSecret so the author console
+ * can recover it later. Server stores ciphertext only (same model as wrapped_key).
+ */
+export async function wrapPassphrase(
+  shareSecret: string,
+  passphrase: string,
+): Promise<{ wrappedPassphrase: string; passphraseWrapIv: string }> {
+  const wrapKey = await deriveWrapKey(shareSecret);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cipher = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    wrapKey,
+    new TextEncoder().encode(passphrase.normalize("NFKC")),
+  );
+  return {
+    wrappedPassphrase: bytesToBase64Url(new Uint8Array(cipher)),
+    passphraseWrapIv: bytesToBase64Url(iv),
+  };
+}
+
+export async function unwrapPassphrase(
+  shareSecret: string,
+  wrappedPassphraseB64: string,
+  wrapIvB64: string,
+): Promise<string> {
+  const wrapKey = await deriveWrapKey(shareSecret);
+  const plain = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: decodeBytes(wrapIvB64) },
+    wrapKey,
+    decodeBytes(wrappedPassphraseB64),
+  );
+  return new TextDecoder().decode(plain);
+}
+
 function decodeBytes(encoded: string): Uint8Array<ArrayBuffer> {
   if (encoded.includes("+") || encoded.includes("/") || encoded.includes("=")) {
     return base64ToBytes(encoded);

@@ -4,7 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { formatRemaining } from "@/lib/capability/policy";
-import { readFragmentKey, withFragment } from "@/lib/crypto/client";
+import {
+  readFragmentKey,
+  unwrapPassphrase,
+  withFragment,
+} from "@/lib/crypto/client";
 import { downloadBackupJson, promptMarkDestroyedInVault, promptSaveToVault } from "@/lib/vault/localVault";
 
 type Snapshot = {
@@ -18,6 +22,8 @@ type Snapshot = {
     watermark: boolean;
     copyFriction: boolean;
     requirePassphrase: boolean;
+    wrappedPassphrase: string | null;
+    passphraseWrapIv: string | null;
   };
   stats: { activeReaders: number; expiredReaders: number };
   invites: {
@@ -72,6 +78,8 @@ export function AuthorConsole() {
   const [rotatedGateUrl, setRotatedGateUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [sharePassphrase, setSharePassphrase] = useState<string | null>(null);
+  const [passphraseHint, setPassphraseHint] = useState<string | null>(null);
 
   const manageUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
@@ -90,6 +98,46 @@ export function AuthorConsole() {
   useEffect(() => {
     load().catch((e) => setError(e instanceof Error ? e.message : "出错了"));
   }, [load]);
+
+  useEffect(() => {
+    if (!snap) return;
+    const d = snap.document;
+    if (!d.requirePassphrase) {
+      setSharePassphrase(null);
+      setPassphraseHint(null);
+      return;
+    }
+    const frag = readFragmentKey();
+    if (!frag) {
+      setSharePassphrase(null);
+      setPassphraseHint("控制台链接缺少 #分享密钥，无法解密口令。");
+      return;
+    }
+    if (!d.wrappedPassphrase || !d.passphraseWrapIv) {
+      setSharePassphrase(null);
+      setPassphraseHint(
+        "此文档创建时未保存可恢复口令（服务器仅有哈希）。请使用创建时记下的口令。",
+      );
+      return;
+    }
+    let cancelled = false;
+    unwrapPassphrase(frag, d.wrappedPassphrase, d.passphraseWrapIv)
+      .then((phrase) => {
+        if (!cancelled) {
+          setSharePassphrase(phrase);
+          setPassphraseHint(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSharePassphrase(null);
+          setPassphraseHint("口令解密失败，请核对链接中的 #分享密钥。");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [snap]);
 
   async function copyText(label: string, value: string) {
     await navigator.clipboard.writeText(value);
@@ -282,6 +330,7 @@ export function AuthorConsole() {
         title: snap.document.title,
         manageUrl: window.location.href,
         gateUrl: rotatedGateUrl || undefined,
+        sharePassphrase: sharePassphrase || undefined,
         note: "妥善离线保存。丢失 manage 链接与 #分享密钥 将无法再管理或解密。",
       },
       `cipherleaf-backup-${snap.document.title.slice(0, 24) || "note"}.json`,
@@ -402,6 +451,33 @@ export function AuthorConsole() {
         )}
       </section>
 
+      {d.requirePassphrase && (
+        <section className="space-y-4 border border-line bg-paper/70 p-5">
+          <h2 className="font-display text-xl">共享口令</h2>
+          {sharePassphrase ? (
+            <div className="space-y-2">
+              <p className="text-sm text-ink-soft">
+                读者进入门禁时需填写。密文由控制台链接中的 #分享密钥 在本地解密，服务器只存哈希。
+              </p>
+              <code className="block break-all border border-line bg-mist/60 p-3 font-mono text-sm tracking-wide">
+                {sharePassphrase}
+              </code>
+              <button
+                type="button"
+                className="font-mono text-xs text-moss"
+                onClick={() => copyText("phrase", sharePassphrase)}
+              >
+                {copied === "phrase" ? "已复制" : "复制口令"}
+              </button>
+            </div>
+          ) : (
+            <p className="text-sm text-ink-soft">
+              {passphraseHint ?? "正在解密口令…"}
+            </p>
+          )}
+        </section>
+      )}
+
       <section className="space-y-4 border border-line bg-paper/70 p-5">
         <div className="flex items-center justify-between gap-3">
           <h2 className="font-display text-xl">邀请码</h2>
@@ -519,7 +595,14 @@ export function AuthorConsole() {
         <p>挑战：{DIFFICULTY_LABEL[d.difficulty] ?? d.difficulty}</p>
         <p>窗口：{Math.round(d.ttlSeconds / 3600)} 小时</p>
         <p>水印：{d.watermark ? "已启用" : "关闭"}</p>
-        <p>口令：{d.requirePassphrase ? "需要" : "不需要"}</p>
+        <p>
+          口令：
+          {d.requirePassphrase
+            ? sharePassphrase
+              ? "需要（见上方）"
+              : "需要"
+            : "不需要"}
+        </p>
       </section>
 
       <div className="flex flex-col gap-3 sm:flex-row">

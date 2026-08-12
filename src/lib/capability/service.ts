@@ -28,6 +28,9 @@ export type CreateDocumentInput = {
   watermark: boolean;
   copyFriction: boolean;
   passphrase?: string;
+  /** Client-wrapped under shareSecret for author recovery (opaque to server). */
+  wrappedPassphrase?: string;
+  passphraseWrapIv?: string;
   initialInviteCount?: number;
   /** Recipient notes for invite codes (one label per invite). */
   inviteLabels?: string[];
@@ -53,12 +56,14 @@ export function createDocument(input: CreateDocumentInput) {
       id, title, ciphertext, iv, wrapped_key, wrap_iv,
       gate_token_hash, manage_token_hash,
       security_preset, gate_mode, difficulty, ttl_seconds, watermark, copy_friction,
-      passphrase_salt, passphrase_hash, created_at, destroyed_at
+      passphrase_salt, passphrase_hash, wrapped_passphrase, passphrase_wrap_iv,
+      created_at, destroyed_at
     ) VALUES (
       @id, @title, @ciphertext, @iv, @wrapped_key, @wrap_iv,
       @gate_token_hash, @manage_token_hash,
       @security_preset, @gate_mode, @difficulty, @ttl_seconds, @watermark, @copy_friction,
-      @passphrase_salt, @passphrase_hash, @created_at, NULL
+      @passphrase_salt, @passphrase_hash, @wrapped_passphrase, @passphrase_wrap_iv,
+      @created_at, NULL
     )`,
   ).run({
     id: docId,
@@ -77,6 +82,8 @@ export function createDocument(input: CreateDocumentInput) {
     copy_friction: input.copyFriction ? 1 : 0,
     passphrase_salt,
     passphrase_hash,
+    wrapped_passphrase: input.wrappedPassphrase ?? null,
+    passphrase_wrap_iv: input.passphraseWrapIv ?? null,
     created_at: now,
   });
 
@@ -353,6 +360,8 @@ export function getManageSnapshot(secret: string) {
       watermark: !!document.watermark,
       copyFriction: !!document.copy_friction,
       requirePassphrase: !!document.passphrase_hash,
+      wrappedPassphrase: document.wrapped_passphrase,
+      passphraseWrapIv: document.passphrase_wrap_iv,
     },
     stats: { activeReaders: active, expiredReaders: expired },
     invites,
@@ -494,16 +503,37 @@ export function destroyDocument(secret: string) {
   const document = getDocumentByManageSecret(secret);
   if (!document) return false;
   const db = getDb();
+  const now = Date.now();
+  // Replace token hashes so the stub cannot be correlated to old gate/manage URLs.
+  const scrubGate = hashToken(`destroyed-gate-${document.id}-${now}`);
+  const scrubManage = hashToken(`destroyed-manage-${document.id}-${now}`);
   const tx = db.transaction(() => {
+    // Drop invite/capsule/challenge metadata immediately — only a scrubbed stub remains.
+    db.prepare(`DELETE FROM challenges WHERE document_id = ?`).run(document.id);
+    db.prepare(`DELETE FROM capsules WHERE document_id = ?`).run(document.id);
+    db.prepare(`DELETE FROM invites WHERE document_id = ?`).run(document.id);
     db.prepare(
-      `UPDATE documents SET destroyed_at = ?, ciphertext = '', iv = '', wrapped_key = NULL, wrap_iv = NULL WHERE id = ?`,
-    ).run(Date.now(), document.id);
-    db.prepare(
-      `UPDATE capsules SET revoked_at = ? WHERE document_id = ? AND revoked_at IS NULL`,
-    ).run(Date.now(), document.id);
-    db.prepare(
-      `UPDATE invites SET status = 'revoked' WHERE document_id = ? AND status = 'active'`,
-    ).run(document.id);
+      `UPDATE documents SET
+         destroyed_at = ?,
+         title = '',
+         ciphertext = '',
+         iv = '',
+         wrapped_key = NULL,
+         wrap_iv = NULL,
+         wrapped_passphrase = NULL,
+         passphrase_wrap_iv = NULL,
+         passphrase_salt = NULL,
+         passphrase_hash = NULL,
+         gate_token_hash = ?,
+         manage_token_hash = ?,
+         security_preset = 'standard',
+         gate_mode = 'open',
+         difficulty = 'thoughtful',
+         ttl_seconds = 0,
+         watermark = 0,
+         copy_friction = 0
+       WHERE id = ?`,
+    ).run(now, scrubGate, scrubManage, document.id);
   });
   tx();
   return true;

@@ -14,6 +14,7 @@ import {
 import {
   applySoftFingerprint,
   buildWatermarkPattern,
+  embedInvisibleWatermark,
 } from "@/lib/watermark";
 import { MarkdownArticle } from "@/components/reader/MarkdownArticle";
 import {
@@ -109,10 +110,14 @@ export function ReaderView() {
           contentKey,
         );
         const parsed = parseManuscript(plaintext);
-        const body = applySoftFingerprint(
+        const day = new Date(json.expiresAt).toISOString().slice(0, 10);
+        let body = applySoftFingerprint(
           enhanceEmphasisMarkup(enhanceMathMarkup(parsed.body)),
           json.fingerprint,
         );
+        if (json.watermark) {
+          body = embedInvisibleWatermark(body, json.fingerprint, day);
+        }
         if (!cancelled) {
           setArticle({
             title: parsed.meta.title || json.title,
@@ -261,7 +266,9 @@ export function ReaderView() {
               minute: "2-digit",
             })}
           </p>
-          <p>水印已公开披露。旨在提高随手转载的成本。</p>
+          <p>
+            水印已公开披露（可见层 + 乱序散布的零宽标记 + 非全局同义替换）。旨在提高随手转载的成本。
+          </p>
         </footer>
       </main>
     </div>

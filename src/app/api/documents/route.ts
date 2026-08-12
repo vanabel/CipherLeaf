@@ -17,6 +17,8 @@ const Body = z.object({
   watermark: z.boolean(),
   copyFriction: z.boolean(),
   passphrase: z.string().min(4).max(128).optional(),
+  wrappedPassphrase: z.string().min(1).optional(),
+  passphraseWrapIv: z.string().min(1).optional(),
   initialInviteCount: z.number().int().min(1).max(20).optional(),
   inviteLabels: z.array(z.string().max(64)).max(20).optional(),
 });
@@ -43,6 +45,8 @@ export async function POST(req: Request) {
     const result = createDocument({
       ...data,
       passphrase: data.passphrase,
+      wrappedPassphrase: data.wrappedPassphrase,
+      passphraseWrapIv: data.passphraseWrapIv,
     });
     return NextResponse.json(
       {

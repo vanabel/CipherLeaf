@@ -12,6 +12,7 @@ import {
 import {
   sealMarkdown,
   withFragment,
+  wrapPassphrase,
 } from "@/lib/crypto/client";
 import {
   inferTitleFromMarkdown,
@@ -28,6 +29,7 @@ type Created = {
   gateUrl: string;
   manageUrl: string;
   manageSecret: string;
+  passphrase: string | null;
   invites: { id: string; code: string; label: string }[];
 };
 
@@ -84,6 +86,10 @@ export function CreateForm() {
       const sealed = await sealMarkdown(content);
       let gateMode = policy.gateMode;
       if (gateMode === "open" && passphrase.trim()) gateMode = "secret";
+      const phrase = passphrase.trim() || undefined;
+      const wrappedPhrase = phrase
+        ? await wrapPassphrase(sealed.shareSecret, phrase)
+        : null;
       const res = await fetch("/api/documents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -99,7 +105,9 @@ export function CreateForm() {
           ttlSeconds,
           watermark: policy.watermark,
           copyFriction: policy.copyFriction,
-          passphrase: passphrase.trim() || undefined,
+          passphrase: phrase,
+          wrappedPassphrase: wrappedPhrase?.wrappedPassphrase,
+          passphraseWrapIv: wrappedPhrase?.passphraseWrapIv,
           initialInviteCount: gateMode === "invite" ? 3 : undefined,
         }),
       });
@@ -113,6 +121,7 @@ export function CreateForm() {
           sealed.shareSecret,
         ),
         manageSecret: data.manageSecret,
+        passphrase: phrase ?? null,
         invites: data.invites ?? [],
       });
     } catch (err) {
@@ -137,6 +146,9 @@ export function CreateForm() {
 
         <CopyBlock label="门禁链接（可分享）" value={created.gateUrl} />
         <CopyBlock label="作者控制台（请保密）" value={created.manageUrl} />
+        {created.passphrase && (
+          <CopyBlock label="共享口令（读者需填写）" value={created.passphrase} />
+        )}
 
         <div className="relative z-10 space-y-3">
           <div className="flex flex-wrap gap-3">

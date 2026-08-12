@@ -22,6 +22,9 @@ export type DocumentRow = {
   copy_friction: number;
   passphrase_salt: string | null;
   passphrase_hash: string | null;
+  /** AES-GCM under shareSecret — author console can recover plaintext. */
+  wrapped_passphrase: string | null;
+  passphrase_wrap_iv: string | null;
   created_at: number;
   destroyed_at: number | null;
 };
@@ -129,6 +132,8 @@ function migrate(db: AppDatabase) {
       copy_friction INTEGER NOT NULL,
       passphrase_salt TEXT,
       passphrase_hash TEXT,
+      wrapped_passphrase TEXT,
+      passphrase_wrap_iv TEXT,
       created_at INTEGER NOT NULL,
       destroyed_at INTEGER
     );
@@ -193,9 +198,18 @@ function migrate(db: AppDatabase) {
   if (!names.has("wrap_iv")) {
     db.exec(`ALTER TABLE documents ADD COLUMN wrap_iv TEXT`);
   }
+  if (!names.has("wrapped_passphrase")) {
+    db.exec(`ALTER TABLE documents ADD COLUMN wrapped_passphrase TEXT`);
+  }
+  if (!names.has("passphrase_wrap_iv")) {
+    db.exec(`ALTER TABLE documents ADD COLUMN passphrase_wrap_iv TEXT`);
+  }
 }
 
-/** Drop expired/revoked capsules and old challenges; keep recent for author audit. */
+/**
+ * Drop expired/revoked capsules, old challenges, and destroyed document stubs
+ * past the retention window (default 7 days).
+ */
 export function purgeStaleRecords(
   db: AppDatabase,
   retentionMs = 7 * 24 * 60 * 60 * 1000,
@@ -209,6 +223,18 @@ export function purgeStaleRecords(
       `DELETE FROM challenges WHERE started_at < ? AND (consumed = 1 OR solved_at IS NOT NULL)`,
     ).run(cutoff);
     db.prepare(`DELETE FROM rate_buckets WHERE window_start < ?`).run(cutoff);
+
+    const staleDestroyed = db
+      .prepare(
+        `SELECT id FROM documents WHERE destroyed_at IS NOT NULL AND destroyed_at < ?`,
+      )
+      .all(cutoff) as { id: string }[];
+    for (const row of staleDestroyed) {
+      db.prepare(`DELETE FROM challenges WHERE document_id = ?`).run(row.id);
+      db.prepare(`DELETE FROM capsules WHERE document_id = ?`).run(row.id);
+      db.prepare(`DELETE FROM invites WHERE document_id = ?`).run(row.id);
+      db.prepare(`DELETE FROM documents WHERE id = ?`).run(row.id);
+    }
   });
   tx();
 }
