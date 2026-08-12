@@ -5,6 +5,30 @@ export function buildWatermarkPattern(
   return `CL · ${fingerprint} · ${dateISO}`;
 }
 
+/** Dense visible CSS watermark: tiled SVG cell (size / angle / opacity tuned for fill). */
+export function buildVisibleWatermarkBackground(mark: string): {
+  backgroundImage: string;
+  backgroundSize: string;
+} {
+  const safe = mark
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+  // Cell ~180×100 → nearly fills viewport; -18° matches prior ::after tilt
+  const w = 180;
+  const h = 100;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">` +
+    `<text x="${w / 2}" y="${h / 2}" fill="#2f5d50" font-family="ui-monospace,monospace" ` +
+    `font-size="10" letter-spacing="1.6" text-anchor="middle" dominant-baseline="middle" ` +
+    `transform="rotate(-18 ${w / 2} ${h / 2})">${safe}</text></svg>`;
+  return {
+    backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(svg)}")`,
+    backgroundSize: `${w}px ${h}px`,
+  };
+}
+
 type SynonymGroup = { pattern: RegExp; a: string; b: string };
 
 const GROUPS: SynonymGroup[] = [

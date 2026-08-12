@@ -13,6 +13,7 @@ import {
 } from "@/lib/capability/policy";
 import {
   applySoftFingerprint,
+  buildVisibleWatermarkBackground,
   buildWatermarkPattern,
   embedInvisibleWatermark,
 } from "@/lib/watermark";
@@ -153,10 +154,11 @@ export function ReaderView() {
     };
   }, [article?.capsule.copyFriction]);
 
-  const mark = useMemo(() => {
-    if (!article) return "";
+  const watermarkBg = useMemo(() => {
+    if (!article) return null;
     const day = new Date(article.capsule.expiresAt).toISOString().slice(0, 10);
-    return buildWatermarkPattern(article.capsule.fingerprint, day);
+    const mark = buildWatermarkPattern(article.capsule.fingerprint, day);
+    return buildVisibleWatermarkBackground(mark);
   }, [article]);
 
   function RetryGateHint({
@@ -212,7 +214,9 @@ export function ReaderView() {
     <div
       className={capsule.copyFriction ? "reader-friction relative" : "relative"}
     >
-      {capsule.watermark && <div className="watermark-layer" data-mark={mark} />}
+      {capsule.watermark && watermarkBg && (
+        <div className="watermark-layer" style={watermarkBg} aria-hidden />
+      )}
       <main className="relative z-10 mx-auto max-w-2xl px-4 py-12 sm:py-16">
         <header className="mb-10 space-y-3">
           <p className="font-mono text-xs tracking-[0.3em] text-moss uppercase">
