@@ -1,26 +1,323 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --ink: #15201c;
+  --ink-soft: #3a4a43;
+  --moss: #2f5d50;
+  --leaf: #4f7d62;
+  --mist: #e6ece8;
+  --paper: #f3f6f3;
+  --line: #c5d0c8;
+  --warn: #8a4b2e;
+  --ok: #2a6b4f;
+  --background: var(--paper);
+  --foreground: var(--ink);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-moss: var(--moss);
+  --color-leaf: var(--leaf);
+  --color-mist: var(--mist);
+  --color-paper: var(--paper);
+  --color-line: var(--line);
+  --color-warn: var(--warn);
+  --color-ok: var(--ok);
+  --font-display: var(--font-fraunces), var(--font-noto-serif-sc), "Songti SC", serif;
+  --font-body: var(--font-noto-serif-sc), "Songti SC", "Times New Roman", serif;
+  --font-mono: var(--font-ibm-plex-mono), ui-monospace, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  color: var(--ink);
+  background:
+    radial-gradient(ellipse 120% 80% at 10% -10%, #d7e4db 0%, transparent 55%),
+    radial-gradient(ellipse 90% 60% at 100% 0%, #cfdcd3 0%, transparent 45%),
+    linear-gradient(180deg, #eef3ef 0%, var(--paper) 40%, #e8efe9 100%);
+  font-family: var(--font-body), "Songti SC", "Times New Roman", serif;
+}
+
+.leaf-grid {
+  background-image:
+    linear-gradient(rgba(47, 93, 80, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(47, 93, 80, 0.04) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.manuscript-rule {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--line), transparent);
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.03);
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes seal {
+  0% {
+    transform: scale(0.6) rotate(-8deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.08) rotate(2deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+.animate-rise {
+  animation: rise-in 0.7s ease both;
+}
+
+.animate-seal {
+  animation: seal 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.watermark-layer {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.07;
+  background-image: repeating-linear-gradient(
+    -24deg,
+    transparent 0 48px,
+    currentColor 48px 49px
+  );
+  color: var(--moss);
+}
+
+.watermark-layer::after {
+  content: attr(data-mark);
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  font-family: var(--font-mono), monospace;
+  font-size: clamp(14px, 2vw, 18px);
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  transform: rotate(-18deg);
+  white-space: nowrap;
+}
+
+.reader-friction * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.prose-leaf {
+  line-height: 1.85;
+  font-size: 1.06rem;
+  color: var(--ink);
+}
+
+.prose-leaf > :first-child {
+  margin-top: 0;
+}
+
+.prose-leaf h1,
+.prose-leaf h2,
+.prose-leaf h3,
+.prose-leaf h4 {
+  font-family: var(--font-display), var(--font-body), serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  line-height: 1.35;
+}
+
+.prose-leaf h1 {
+  font-size: 1.75rem;
+  margin: 1.5em 0 0.55em;
+}
+
+.prose-leaf h2 {
+  font-size: 1.4rem;
+  margin: 1.7em 0 0.5em;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid var(--line);
+}
+
+.prose-leaf h3 {
+  font-size: 1.2rem;
+  margin: 1.4em 0 0.45em;
+}
+
+.prose-leaf h4 {
+  font-size: 1.08rem;
+  margin: 1.25em 0 0.4em;
+}
+
+.prose-leaf p {
+  margin: 0.95em 0;
+}
+
+.prose-leaf strong,
+.prose-leaf b {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.prose-leaf em,
+.prose-leaf i {
+  font-style: italic;
+}
+
+.prose-leaf code {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.9em;
+  background: rgba(47, 93, 80, 0.08);
+  padding: 0.1em 0.35em;
+}
+
+.prose-leaf pre {
+  overflow-x: auto;
+  padding: 1rem;
+  margin: 1.2em 0;
+  background: rgba(21, 32, 28, 0.04);
+  border: 1px solid var(--line);
+}
+
+.prose-leaf pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.prose-leaf a {
+  color: var(--moss);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.prose-leaf blockquote {
+  margin: 1.35em 0;
+  padding: 0.85em 1em;
+  border-left: 3px solid var(--moss);
+  background: rgba(47, 93, 80, 0.06);
+  color: var(--ink-soft);
+}
+
+.prose-leaf blockquote p {
+  margin: 0.35em 0;
+}
+
+.prose-leaf blockquote strong {
+  color: var(--ink);
+}
+
+.prose-leaf ul {
+  list-style: disc;
+  margin: 1em 0;
+  padding-left: 1.6em;
+}
+
+.prose-leaf ol {
+  list-style: decimal;
+  margin: 1em 0;
+  padding-left: 1.6em;
+}
+
+.prose-leaf li {
+  margin: 0.45em 0;
+  padding-left: 0.15em;
+}
+
+.prose-leaf li > ul,
+.prose-leaf li > ol {
+  margin: 0.35em 0;
+}
+
+.prose-leaf li::marker {
+  color: var(--moss);
+}
+
+.prose-leaf hr {
+  border: 0;
+  height: 1px;
+  margin: 2.2em 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--line) 12%,
+    var(--moss) 50%,
+    var(--line) 88%,
+    transparent
+  );
+}
+
+.prose-leaf h1:first-child {
+  margin-top: 0;
+}
+
+.prose-leaf .katex {
+  font-size: 1.05em;
+  color: var(--ink);
+}
+
+.prose-leaf .katex-display {
+  margin: 1.25em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25em 0;
+}
+
+.prose-leaf .katex-display > .katex {
+  font-size: 1.15em;
+}
+
+/* Gate ceremony math */
+.gate-prompt .katex {
+  font-size: 1.08em;
+}
+
+.gate-prompt .katex-display {
+  margin: 1em 0;
+  overflow-x: auto;
+}
+
+@media print {
+  body * {
+    display: none !important;
+  }
+  body::after {
+    content: "CipherLeaf 阅读副本不可打印。";
+    display: block !important;
+    padding: 2rem;
+  }
 }
