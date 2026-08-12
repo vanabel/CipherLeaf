@@ -19,6 +19,8 @@ import {
   parseManuscript,
 } from "@/lib/markdown/frontmatter";
 import { randomMathPassphrase } from "@/lib/passphrase/mathPhrases";
+import { rememberGateUrl } from "@/lib/share/letter";
+import { ShareEnvelope } from "@/components/share/ShareEnvelope";
 import {
   createVault,
   upsertVaultEntry,
@@ -31,6 +33,7 @@ type Created = {
   manageSecret: string;
   passphrase: string | null;
   invites: { id: string; code: string; label: string }[];
+  title: string;
 };
 
 export function CreateForm() {
@@ -114,15 +117,22 @@ export function CreateForm() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "创建失败");
       const origin = window.location.origin;
+      const gateUrl = withFragment(
+        `${origin}/g/${data.gateToken}`,
+        sealed.shareSecret,
+      );
+      const manageSecret = data.manageSecret as string;
+      rememberGateUrl(manageSecret, gateUrl);
       setCreated({
-        gateUrl: withFragment(`${origin}/g/${data.gateToken}`, sealed.shareSecret),
+        gateUrl,
         manageUrl: withFragment(
-          `${origin}/m/${data.manageSecret}`,
+          `${origin}/m/${manageSecret}`,
           sealed.shareSecret,
         ),
-        manageSecret: data.manageSecret,
+        manageSecret,
         passphrase: phrase ?? null,
         invites: data.invites ?? [],
+        title: title.trim() || inferTitleFromMarkdown(content),
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "创建失败");
@@ -150,6 +160,15 @@ export function CreateForm() {
           <CopyBlock label="共享口令（读者需填写）" value={created.passphrase} />
         )}
 
+        {created.invites.length === 0 &&
+          (created.passphrase || created.gateUrl) && (
+            <ShareEnvelope
+              title={created.title}
+              gateUrl={created.gateUrl}
+              passphrase={created.passphrase}
+            />
+          )}
+
         <div className="relative z-10 space-y-3">
           <div className="flex flex-wrap gap-3">
             <button
@@ -165,6 +184,8 @@ export function CreateForm() {
             </button>
             <Link
               href="/vault"
+              target="_blank"
+              rel="noopener noreferrer"
               className="px-3 py-2 text-sm text-moss hover:underline"
             >
               打开书签包 →
@@ -241,6 +262,9 @@ export function CreateForm() {
                   key={inv.id}
                   invite={inv}
                   manageSecret={created.manageSecret}
+                  gateUrl={created.gateUrl}
+                  passphrase={created.passphrase}
+                  title={created.title}
                   onLabeled={(id, label) =>
                     setCreated((prev) =>
                       prev
@@ -435,16 +459,22 @@ function isPlaceholderLabel(label: string) {
 function InviteShareRow({
   invite,
   manageSecret,
+  gateUrl,
+  passphrase,
+  title,
   onLabeled,
 }: {
   invite: { id: string; code: string; label: string };
   manageSecret: string;
+  gateUrl: string;
+  passphrase: string | null;
+  title: string;
   onLabeled: (id: string, label: string) => void;
 }) {
   const [note, setNote] = useState(
     isPlaceholderLabel(invite.label) ? "" : invite.label,
   );
-  const [copied, setCopied] = useState(false);
+  const [codeOnlyCopied, setCodeOnlyCopied] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
 
   async function saveLabel(label: string) {
@@ -458,7 +488,7 @@ function InviteShareRow({
     onLabeled(invite.id, label);
   }
 
-  async function copyShare() {
+  async function ensureNote(): Promise<boolean> {
     setStatus(null);
     let label = note.trim();
     if (!label) {
@@ -466,34 +496,40 @@ function InviteShareRow({
         "这份邀请码发给谁？（备注后便于水印倒查）",
         "",
       );
-      if (typed === null) return;
+      if (typed === null) return false;
       label = typed.trim();
       if (!label) {
-        setStatus("未填写备注，已取消复制。");
-        return;
+        setStatus("未填写备注，已取消。");
+        return false;
       }
       setNote(label);
     }
+    await saveLabel(label);
+    return true;
+  }
+
+  async function copyCodeOnly() {
     try {
-      await saveLabel(label);
+      const ok = await ensureNote();
+      if (!ok) return;
       await navigator.clipboard.writeText(invite.code);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      setCodeOnlyCopied(true);
+      setTimeout(() => setCodeOnlyCopied(false), 1500);
     } catch (e) {
       setStatus(e instanceof Error ? e.message : "复制失败");
     }
   }
 
   return (
-    <li className="space-y-2 border border-line bg-mist/60 px-3 py-3">
+    <li className="space-y-3 border border-line bg-mist/40 px-3 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-sm">
         <span className="tracking-widest text-lg">{invite.code}</span>
         <button
           type="button"
-          className="font-mono text-xs tracking-wide text-moss"
-          onClick={copyShare}
+          className="font-mono text-xs tracking-wide text-ink-soft hover:text-moss"
+          onClick={copyCodeOnly}
         >
-          {copied ? "已复制" : "备注并复制"}
+          {codeOnlyCopied ? "已复制邀请码" : "仅复制邀请码"}
         </button>
       </div>
       <input
@@ -502,6 +538,13 @@ function InviteShareRow({
         placeholder="发给谁（例如：张三）"
         maxLength={64}
         className="w-full border border-line bg-paper/80 px-2 py-1.5 font-mono text-sm outline-none focus:border-moss"
+      />
+      <ShareEnvelope
+        title={title}
+        gateUrl={gateUrl}
+        passphrase={passphrase}
+        inviteCode={invite.code}
+        onBeforeCopy={ensureNote}
       />
       {status && <p className="text-xs text-warn">{status}</p>}
     </li>

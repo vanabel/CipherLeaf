@@ -108,6 +108,45 @@ body {
   animation: seal 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
+/* Share envelope — sealed flap + staggered field reveal */
+.share-envelope {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(165deg, rgba(243, 246, 243, 0.95) 0%, rgba(230, 236, 232, 0.88) 100%);
+}
+
+.share-envelope__flap {
+  height: 10px;
+  background: linear-gradient(
+    180deg,
+    rgba(47, 93, 80, 0.18) 0%,
+    rgba(47, 93, 80, 0.04) 100%
+  );
+  border-bottom: 1px solid var(--line);
+  transition: height 0.45s ease, opacity 0.45s ease;
+}
+
+.share-envelope--open .share-envelope__flap {
+  height: 3px;
+  opacity: 0.55;
+}
+
+@keyframes envelope-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.share-envelope__reveal {
+  animation: envelope-reveal 0.45s ease both;
+}
+
 /* Visible watermark: repeating SVG tile via inline backgroundImage/Size from JS.
    Density lives in tile size (~180×100) + layer opacity — keep text readable. */
 .watermark-layer {

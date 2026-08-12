@@ -9,6 +9,8 @@ import {
   unwrapPassphrase,
   withFragment,
 } from "@/lib/crypto/client";
+import { recallGateUrl, rememberGateUrl } from "@/lib/share/letter";
+import { ShareEnvelope } from "@/components/share/ShareEnvelope";
 import { downloadBackupJson, promptMarkDestroyedInVault, promptSaveToVault } from "@/lib/vault/localVault";
 
 type Snapshot = {
@@ -81,6 +83,12 @@ export function AuthorConsole() {
   }, [snap]);
 
   const shareSecret = useMemo(() => readFragmentKey(), [snap]);
+
+  const readerGateUrl = useMemo(() => {
+    if (rotatedGateUrl) return rotatedGateUrl;
+    if (typeof window === "undefined") return null;
+    return recallGateUrl(secret);
+  }, [rotatedGateUrl, secret, snap]);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/manage/${secret}`, { cache: "no-store" });
@@ -161,19 +169,19 @@ export function AuthorConsole() {
     }
   }
 
-  async function copyNewInvite() {
-    if (!newInvite) return;
+  async function ensureNewInviteNote(): Promise<boolean> {
+    if (!newInvite) return false;
     let note = newInviteNote.trim();
     if (!note) {
       const typed = window.prompt(
         "这份邀请码发给谁？（备注后便于水印倒查）",
         "",
       );
-      if (typed === null) return;
+      if (typed === null) return false;
       note = typed.trim();
       if (!note) {
-        setError("未填写备注，已取消复制。");
-        return;
+        setError("未填写备注，已取消。");
+        return false;
       }
       setNewInviteNote(note);
     }
@@ -185,11 +193,23 @@ export function AuthorConsole() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "保存备注失败");
+      setNewInvite((prev) => (prev ? { ...prev, label: note } : prev));
+      await load();
+      return true;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "保存备注失败");
+      return false;
+    }
+  }
+
+  async function copyNewInviteCodeOnly() {
+    if (!newInvite) return;
+    const ok = await ensureNewInviteNote();
+    if (!ok) return;
+    try {
       await navigator.clipboard.writeText(newInvite.code);
       setCopied("invite");
       setTimeout(() => setCopied(null), 1500);
-      setNewInvite((prev) => (prev ? { ...prev, label: note } : prev));
-      await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "复制失败");
     }
@@ -214,14 +234,19 @@ export function AuthorConsole() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "轮换失败");
       const frag = shareSecret || readFragmentKey();
+      let nextGate: string;
       if (!frag) {
-        setRotatedGateUrl(`${window.location.origin}/g/${json.gateToken}`);
+        nextGate = `${window.location.origin}/g/${json.gateToken}`;
+        setRotatedGateUrl(nextGate);
         setError("缺少分享密钥片段，请手动补上 #密钥。");
       } else {
-        setRotatedGateUrl(
-          withFragment(`${window.location.origin}/g/${json.gateToken}`, frag),
+        nextGate = withFragment(
+          `${window.location.origin}/g/${json.gateToken}`,
+          frag,
         );
+        setRotatedGateUrl(nextGate);
       }
+      rememberGateUrl(secret, nextGate);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "轮换失败");
@@ -362,7 +387,12 @@ export function AuthorConsole() {
           <p className="font-mono text-xs tracking-[0.3em] text-moss uppercase">
             作者控制台
           </p>
-          <Link href="/vault" className="font-mono text-xs text-moss">
+          <Link
+            href="/vault"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-mono text-xs text-moss"
+          >
             本机书签包 →
           </Link>
         </div>
@@ -487,7 +517,7 @@ export function AuthorConsole() {
           )}
         </div>
         {newInvite && (
-          <div className="space-y-2 border border-ok/30 bg-ok/5 px-3 py-3">
+          <div className="space-y-3 border border-ok/30 bg-ok/5 px-3 py-3">
             <p className="font-mono text-sm">
               新邀请码（仅显示一次）：
               <span className="ml-2 tracking-widest">{newInvite.code}</span>
@@ -499,12 +529,21 @@ export function AuthorConsole() {
               maxLength={64}
               className="w-full border border-line bg-paper/80 px-2 py-1.5 font-mono text-sm outline-none focus:border-moss"
             />
+            <ShareEnvelope
+              title={d.title}
+              gateUrl={readerGateUrl ?? ""}
+              passphrase={sharePassphrase}
+              inviteCode={newInvite.code}
+              onBeforeCopy={ensureNewInviteNote}
+              disabled={!readerGateUrl}
+              disabledHint="缺少门禁网址。请从创建页封信，或先轮换门禁以获得新网址。"
+            />
             <button
               type="button"
-              className="font-mono text-xs text-moss"
-              onClick={copyNewInvite}
+              className="font-mono text-xs text-ink-soft hover:text-moss"
+              onClick={copyNewInviteCodeOnly}
             >
-              {copied === "invite" ? "已复制" : "备注并复制"}
+              {copied === "invite" ? "已复制邀请码" : "仅复制邀请码"}
             </button>
           </div>
         )}

@@ -20,10 +20,40 @@ const mono = IBM_Plex_Mono({
   subsets: ["latin"],
 });
 
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
+  (process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL.replace(/^https?:\/\//, "")}`
+    : "http://localhost:3460");
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: "CipherLeaf — 为审慎读者准备的加密知识",
   description:
     "零明文托管、数学挑战门禁、短期阅读胶囊，以及公开披露的个体化水印——面向敏感原创写作。",
+  openGraph: {
+    type: "website",
+    locale: "zh_CN",
+    siteName: "CipherLeaf",
+    title: "CipherLeaf — 为审慎读者准备的加密知识",
+    description:
+      "零明文托管、数学挑战门禁、短期阅读胶囊，以及公开披露的个体化水印——面向敏感原创写作。",
+    images: [
+      {
+        url: "/og-envelope.png",
+        width: 1200,
+        height: 630,
+        alt: "CipherLeaf 封存信封",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "CipherLeaf — 为审慎读者准备的加密知识",
+    description:
+      "零明文托管、数学挑战门禁、短期阅读胶囊，以及公开披露的个体化水印——面向敏感原创写作。",
+    images: ["/og-envelope.png"],
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
