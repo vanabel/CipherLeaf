@@ -8,6 +8,32 @@ import { MathMarkdown } from "@/components/markdown/MathMarkdown";
 import { mathHistoryForToken } from "@/lib/passphrase/mathHistory";
 import { rememberGateReturn } from "@/lib/reader/gateReturn";
 
+/** Safari often throws TypeError("Load failed") on flaky network / aborted fetch. */
+function friendlyFetchError(err: unknown, fallback: string): string {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  if (
+    /load failed|failed to fetch|networkerror|network request failed|fetch failed/i.test(
+      msg,
+    )
+  ) {
+    return "网络请求失败，请检查连接后重试。若刚部署过服务，请稍等几秒再试。";
+  }
+  if (/unexpected token|is not valid json/i.test(msg)) {
+    return "服务器返回异常，请稍后重试。";
+  }
+  return msg || fallback;
+}
+
+async function readResponseJson(res: Response): Promise<Record<string, unknown>> {
+  const text = await res.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    throw new Error("服务器返回异常，请稍后重试。");
+  }
+}
+
 type ChallengePayload = {
   title: string;
   gateMode: string;
@@ -52,15 +78,15 @@ export function GateCeremony() {
         const res = await fetch(`/api/gate/${token}/challenge`, {
           cache: "no-store",
         });
-        const json = await res.json();
+        const json = await readResponseJson(res);
         if (!res.ok) throw new Error(json.error || "门禁不可用");
         if (!cancelled) {
-          setData(json);
+          setData(json as ChallengePayload);
           setPhase("ceremony");
         }
       } catch (e) {
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : "门禁不可用");
+          setError(friendlyFetchError(e, "门禁不可用"));
           setPhase("error");
         }
       }
@@ -86,12 +112,16 @@ export function GateCeremony() {
           passphrase: phrase || undefined,
         }),
       });
-      const json = await res.json();
+      const json = await readResponseJson(res);
       if (!res.ok) throw new Error(json.error || "解锁失败");
-      setGranted(json);
+      setGranted(json as {
+        capsuleToken: string;
+        fingerprint: string;
+        expiresAt: number;
+      });
       setPhase("granted");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "解锁失败");
+      setError(friendlyFetchError(err, "解锁失败"));
     } finally {
       setBusy(false);
     }

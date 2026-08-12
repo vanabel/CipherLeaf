@@ -20,6 +20,7 @@ import {
 import { MarkdownArticle } from "@/components/reader/MarkdownArticle";
 import {
   parseManuscript,
+  prepareReaderBody,
   type ManuscriptMeta,
 } from "@/lib/markdown/frontmatter";
 import { enhanceMathMarkup } from "@/lib/markdown/mathEnhance";
@@ -111,9 +112,16 @@ export function ReaderView() {
           contentKey,
         );
         const parsed = parseManuscript(plaintext);
+        const displayTitle = parsed.meta.title || json.title;
         const day = new Date(json.expiresAt).toISOString().slice(0, 10);
-        let body = applySoftFingerprint(
-          enhanceEmphasisMarkup(enhanceMathMarkup(parsed.body)),
+        let body = prepareReaderBody(
+          parsed.body,
+          parsed.meta,
+          parsed.hasFrontmatter,
+          displayTitle,
+        );
+        body = applySoftFingerprint(
+          enhanceEmphasisMarkup(enhanceMathMarkup(body)),
           json.fingerprint,
         );
         if (json.watermark) {
@@ -121,7 +129,7 @@ export function ReaderView() {
         }
         if (!cancelled) {
           setArticle({
-            title: parsed.meta.title || json.title,
+            title: displayTitle,
             body,
             meta: parsed.meta,
             hasFrontmatter: parsed.hasFrontmatter,

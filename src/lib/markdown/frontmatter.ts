@@ -126,3 +126,55 @@ export function inferTitleFromMarkdown(
   if (heading?.[1]) return heading[1].trim();
   return fallback;
 }
+
+function normTitle(s: string): string {
+  return s.replace(/\s+/g, "").trim();
+}
+
+/**
+ * When YAML frontmatter already drives the reader chrome (H1 + MetaBlock),
+ * drop the duplicated lead heading / author-copyright blockquote from the body.
+ * Preserves a leading「整理说明」note when present in that blockquote.
+ */
+export function prepareReaderBody(
+  body: string,
+  meta: ManuscriptMeta,
+  hasFrontmatter: boolean,
+  displayTitle?: string,
+): string {
+  if (!hasFrontmatter) return body;
+  let text = body.replace(/^\s+/, "");
+
+  const title = meta.title || displayTitle;
+  const h1 = text.match(/^#\s+(.+?)(?:\r?\n|$)/);
+  if (h1 && title && normTitle(h1[1]) === normTitle(title)) {
+    text = text.slice(h1[0].length).replace(/^\s+/, "");
+  }
+
+  const bqMatch = text.match(/^(?:>[^\n]*(?:\r?\n|$))+/);
+  if (!bqMatch) return text;
+
+  const quoteRaw = bqMatch[0];
+  const quotePlain = quoteRaw
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^>\s?/, ""))
+    .join("\n");
+
+  const duplicatesMeta =
+    (Boolean(meta.author) && /作者/.test(quotePlain)) ||
+    (Boolean(meta.copyright) && /版权/.test(quotePlain));
+
+  if (!duplicatesMeta) return text;
+
+  text = text.slice(quoteRaw.length).replace(/^\s+/, "");
+
+  const note = quotePlain.match(
+    /\*\*整理说明[：:]\*\*\s*([\s\S]+?)(?=\n\s*\*\*|$)/,
+  );
+  if (note?.[1]?.trim()) {
+    const cleaned = note[1].trim().replace(/\n+/g, " ");
+    text = `> **整理说明：**${cleaned}\n\n${text}`;
+  }
+
+  return text;
+}
