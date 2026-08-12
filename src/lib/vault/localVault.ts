@@ -124,6 +124,9 @@ export async function saveVaultEntries(
   entries: VaultEntry[],
 ): Promise<void> {
   const existing = readVaultBlob();
+  // Never overwrite an existing vault with an unverified passphrase — wrong
+  // keys would silently re-encrypt and lock the user out of prior entries.
+  if (existing) await unlockVault(passphrase);
   const salt = existing
     ? b64ToBytes(existing.salt)
     : crypto.getRandomValues(new Uint8Array(16));
@@ -258,15 +261,51 @@ export async function removeVaultEntry(
   return entries;
 }
 
-/** Prompt and mark a manage URL as destroyed in the local vault (best-effort). */
+/**
+ * Prompt for vault passphrase and verify it unlocks, before any irreversible
+ * action (e.g. server destroy). Wrong password / cancel must not proceed.
+ */
+export async function promptVerifyVaultPassphrase(
+  message: string,
+): Promise<
+  | { status: "ok"; passphrase: string }
+  | { status: "skip" }
+  | { status: "cancel" }
+  | { status: "error"; message: string }
+> {
+  if (!vaultExists()) return { status: "skip" };
+  const pwd = window.prompt(message);
+  if (pwd == null) return { status: "cancel" };
+  try {
+    await unlockVault(pwd);
+    return { status: "ok", passphrase: pwd };
+  } catch (e) {
+    return {
+      status: "error",
+      message: e instanceof Error ? e.message : "口令不正确，或书签包已损坏。",
+    };
+  }
+}
+
+/** Mark a manage URL as destroyed after passphrase was already verified. */
 export async function promptMarkDestroyedInVault(
   manageUrl: string,
+  passphrase?: string,
 ): Promise<"ok" | "skip" | "cancel" | "error"> {
   if (!vaultExists()) return "skip";
-  const pwd = window.prompt(
-    "文档已销毁。输入本机书签包口令，将对应书签标为「已销毁」：",
-  );
-  if (pwd == null) return "cancel";
+  let pwd = passphrase;
+  if (pwd == null) {
+    const verified = await promptVerifyVaultPassphrase(
+      "输入本机书签包口令，将对应书签标为「已销毁」：",
+    );
+    if (verified.status === "skip") return "skip";
+    if (verified.status === "cancel") return "cancel";
+    if (verified.status === "error") {
+      window.alert(verified.message);
+      return "error";
+    }
+    pwd = verified.passphrase;
+  }
   try {
     const { matched } = await markVaultEntryDestroyed(pwd, manageUrl);
     if (!matched) {
@@ -316,18 +355,20 @@ export async function promptSaveToVault(entry: {
   manageUrl: string;
   gateUrl?: string;
 }): Promise<"ok" | "cancel" | "error"> {
+  const exists = vaultExists();
   const pwd = window.prompt(
-    vaultExists()
+    exists
       ? "输入本机书签包口令以保存："
       : "创建本机书签包：设置一个口令（至少 6 位）：",
   );
   if (pwd == null) return "cancel";
-  if (!vaultExists() && pwd.trim().length < 6) {
+  if (!exists && pwd.trim().length < 6) {
     window.alert("口令至少 6 个字符。");
     return "error";
   }
   try {
-    if (!vaultExists()) await createVault(pwd, []);
+    // Verify existing vault BEFORE any write; upsert creates when absent.
+    if (exists) await unlockVault(pwd);
     await upsertVaultEntry(pwd, entry);
     return "ok";
   } catch (e) {

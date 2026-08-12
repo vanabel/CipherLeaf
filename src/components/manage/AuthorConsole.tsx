@@ -11,7 +11,13 @@ import {
 } from "@/lib/crypto/client";
 import { recallGateUrl, rememberGateUrl } from "@/lib/share/letter";
 import { ShareEnvelope } from "@/components/share/ShareEnvelope";
-import { downloadBackupJson, promptMarkDestroyedInVault, promptSaveToVault } from "@/lib/vault/localVault";
+import {
+  downloadBackupJson,
+  promptMarkDestroyedInVault,
+  promptSaveToVault,
+  promptVerifyVaultPassphrase,
+  vaultExists,
+} from "@/lib/vault/localVault";
 
 type Snapshot = {
   document: {
@@ -319,16 +325,45 @@ export function AuthorConsole() {
       return;
     }
     setBusy(true);
+    setError(null);
     try {
+      // If a local vault exists, verify its passphrase BEFORE irreversible
+      // server destroy — wrong password / cancel must abort the whole flow.
+      let vaultPassphrase: string | undefined;
+      if (vaultExists()) {
+        const verified = await promptVerifyVaultPassphrase(
+          "输入本机书签包口令以同步标记「已销毁」。口令错误或取消将中止销毁：",
+        );
+        if (verified.status === "cancel") {
+          setError("已取消销毁。");
+          return;
+        }
+        if (verified.status === "error") {
+          setError(verified.message);
+          return;
+        }
+        if (verified.status === "ok") vaultPassphrase = verified.passphrase;
+      }
+
       const res = await fetch(`/api/manage/${secret}/destroy`, {
         method: "POST",
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "销毁失败");
       setSnap(null);
-      const vaultResult = await promptMarkDestroyedInVault(window.location.href);
-      if (vaultResult === "ok") {
-        setError("加密文档已销毁；本机书签已标为「已销毁」。");
+
+      if (vaultPassphrase != null) {
+        const vaultResult = await promptMarkDestroyedInVault(
+          window.location.href,
+          vaultPassphrase,
+        );
+        if (vaultResult === "ok") {
+          setError("加密文档已销毁；本机书签已标为「已销毁」。");
+        } else if (vaultResult === "error") {
+          setError("加密文档已销毁，但更新本机书签失败。");
+        } else {
+          setError("加密文档已销毁。");
+        }
       } else {
         setError("加密文档已销毁。");
       }

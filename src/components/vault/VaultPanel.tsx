@@ -6,6 +6,7 @@ import {
   clearVault,
   exportVaultFile,
   importVaultFile,
+  promptVerifyVaultPassphrase,
   removeVaultEntry,
   syncVaultDestroyedStatus,
   unlockVault,
@@ -44,8 +45,15 @@ export function VaultPanel() {
         let list = await unlockVault(passphrase);
         try {
           list = await syncVaultDestroyedStatus(passphrase);
-        } catch {
-          // keep unlocked list even if probe fails
+        } catch (syncErr) {
+          // Network/probe failures keep the unlocked list; passphrase failures
+          // should not happen after unlock, but never clear entries on sync error.
+          if (
+            syncErr instanceof Error &&
+            syncErr.message.includes("口令不正确")
+          ) {
+            throw syncErr;
+          }
         }
         setEntries(list);
       }
@@ -60,10 +68,24 @@ export function VaultPanel() {
 
   async function onRemove(id: string) {
     if (!confirm("从本机书签包移除这条记录？")) return;
+    // Re-verify passphrase before mutating — session unlock alone is not enough.
+    const verified = await promptVerifyVaultPassphrase(
+      "输入书签包口令以确认移除：",
+    );
+    if (verified.status === "cancel" || verified.status === "skip") return;
+    if (verified.status === "error") {
+      setError(verified.message);
+      return;
+    }
     setBusy(true);
+    setError(null);
     try {
-      setEntries(await removeVaultEntry(passphrase, id));
+      const next = await removeVaultEntry(verified.passphrase, id);
+      setEntries(next);
+      // Keep session passphrase in sync after successful re-auth.
+      setPassphrase(verified.passphrase);
     } catch (err) {
+      // Wrong passphrase (or corrupt vault): keep current entries in UI + storage.
       setError(err instanceof Error ? err.message : "移除失败");
     } finally {
       setBusy(false);
@@ -180,7 +202,19 @@ export function VaultPanel() {
               setBusy(true);
               setError(null);
               try {
-                setEntries(await syncVaultDestroyedStatus(passphrase));
+                const verified = await promptVerifyVaultPassphrase(
+                  "输入书签包口令以检查远端状态：",
+                );
+                if (verified.status === "cancel" || verified.status === "skip") {
+                  return;
+                }
+                if (verified.status === "error") {
+                  setError(verified.message);
+                  return;
+                }
+                const next = await syncVaultDestroyedStatus(verified.passphrase);
+                setEntries(next);
+                setPassphrase(verified.passphrase);
               } catch (err) {
                 setError(err instanceof Error ? err.message : "检查失败");
               } finally {

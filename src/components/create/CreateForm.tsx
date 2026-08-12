@@ -22,7 +22,7 @@ import { randomMathPassphrase } from "@/lib/passphrase/mathPhrases";
 import { rememberGateUrl } from "@/lib/share/letter";
 import { ShareEnvelope } from "@/components/share/ShareEnvelope";
 import {
-  createVault,
+  unlockVault,
   upsertVaultEntry,
   vaultExists,
 } from "@/lib/vault/localVault";
@@ -226,7 +226,8 @@ export function CreateForm() {
                   }
                   setVaultBusy(true);
                   try {
-                    if (!vaultExists()) await createVault(pwd, []);
+                    // Unlock first when vault exists; never write on wrong password.
+                    if (vaultExists()) await unlockVault(pwd);
                     await upsertVaultEntry(pwd, {
                       title: title.trim() || inferTitleFromMarkdown(content),
                       manageUrl: created.manageUrl,
