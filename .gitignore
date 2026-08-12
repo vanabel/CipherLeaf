@@ -51,3 +51,6 @@ next-env.d.ts
 *.sqlite-journal
 cipherleaf-backup-*.json
 cipherleaf-vault-*.json
+
+# Subtitles / working transcripts — keep local, out of VCS
+srt/
