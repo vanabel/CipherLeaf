@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["better-sqlite3"],
+  // Uses Node.js built-in node:sqlite (no native addon rebuild on NAS).
 };
 
 export default nextConfig;

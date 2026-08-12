@@ -1,4 +1,4 @@
-import Database from "better-sqlite3";
+import { DatabaseSync, type StatementSync } from "node:sqlite";
 import fs from "fs";
 import path from "path";
 
@@ -64,12 +64,53 @@ export type ChallengeRow = {
   consumed: number;
 };
 
+/** Thin wrapper so call sites keep better-sqlite3-like ergonomics. */
+export type AppDatabase = {
+  exec(sql: string): void;
+  prepare(sql: string): StatementSync;
+  pragma(source: string): void;
+  transaction<T>(fn: () => T): () => T;
+};
+
 declare global {
   // eslint-disable-next-line no-var
-  var __cipherleafDb: Database.Database | undefined;
+  var __cipherleafDb: AppDatabase | undefined;
+  // eslint-disable-next-line no-var
+  var __cipherleafLastPurge: number | undefined;
 }
 
-function migrate(db: Database.Database) {
+function wrapDatabase(raw: DatabaseSync): AppDatabase {
+  return {
+    exec: (sql) => raw.exec(sql),
+    prepare: (sql) => {
+      const stmt = raw.prepare(sql);
+      stmt.setAllowBareNamedParameters(true);
+      return stmt;
+    },
+    pragma: (source) => {
+      raw.exec(`PRAGMA ${source}`);
+    },
+    transaction: <T>(fn: () => T) => {
+      return () => {
+        raw.exec("BEGIN");
+        try {
+          const result = fn();
+          raw.exec("COMMIT");
+          return result;
+        } catch (err) {
+          try {
+            raw.exec("ROLLBACK");
+          } catch {
+            // ignore rollback errors
+          }
+          throw err;
+        }
+      };
+    },
+  };
+}
+
+function migrate(db: AppDatabase) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS documents (
       id TEXT PRIMARY KEY,
@@ -142,10 +183,9 @@ function migrate(db: Database.Database) {
     );
   `);
 
-  // Additive migrations for existing DBs
-  const cols = db
-    .prepare(`PRAGMA table_info(documents)`)
-    .all() as { name: string }[];
+  const cols = db.prepare(`PRAGMA table_info(documents)`).all() as {
+    name: string;
+  }[];
   const names = new Set(cols.map((c) => c.name));
   if (!names.has("wrapped_key")) {
     db.exec(`ALTER TABLE documents ADD COLUMN wrapped_key TEXT`);
@@ -157,7 +197,7 @@ function migrate(db: Database.Database) {
 
 /** Drop expired/revoked capsules and old challenges; keep recent for author audit. */
 export function purgeStaleRecords(
-  db: Database.Database,
+  db: AppDatabase,
   retentionMs = 7 * 24 * 60 * 60 * 1000,
 ) {
   const cutoff = Date.now() - retentionMs;
@@ -173,15 +213,11 @@ export function purgeStaleRecords(
   tx();
 }
 
-declare global {
-  // eslint-disable-next-line no-var
-  var __cipherleafLastPurge: number | undefined;
-}
-
-export function getDb(): Database.Database {
+export function getDb(): AppDatabase {
   if (!global.__cipherleafDb) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    const db = new Database(DB_PATH);
+    const raw = new DatabaseSync(DB_PATH);
+    const db = wrapDatabase(raw);
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
     migrate(db);
@@ -191,7 +227,7 @@ export function getDb(): Database.Database {
   return global.__cipherleafDb;
 }
 
-function maybePurge(db: Database.Database) {
+function maybePurge(db: AppDatabase) {
   const now = Date.now();
   if (
     global.__cipherleafLastPurge &&
@@ -205,4 +241,9 @@ function maybePurge(db: Database.Database) {
   } catch {
     // best-effort housekeeping
   }
+}
+
+/** Normalize StatementSync.run().changes across number | bigint. */
+export function changesOf(result: { changes: number | bigint }): number {
+  return Number(result.changes);
 }

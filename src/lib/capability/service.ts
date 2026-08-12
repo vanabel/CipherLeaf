@@ -1,4 +1,4 @@
-import { getDb, type CapsuleRow, type DocumentRow, type InviteRow } from "@/lib/db";
+import { getDb, changesOf, type CapsuleRow, type DocumentRow, type InviteRow } from "@/lib/db";
 import {
   generateFingerprint,
   generateInviteCode,
@@ -436,7 +436,7 @@ export function revokeCapsuleByFingerprint(
        WHERE document_id = ? AND fingerprint = ? AND revoked_at IS NULL`,
     )
     .run(Date.now(), document.id, fp);
-  if (result.changes === 0) {
+  if (changesOf(result) === 0) {
     return { ok: false, error: "未找到可撤销的阅读胶囊。" };
   }
   return { ok: true };

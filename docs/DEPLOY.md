@@ -38,7 +38,9 @@ pnpm build
 pm2 restart cleaf
 ```
 
-`better-sqlite3` is native — always `pnpm install` / rebuild **on the NAS**, do not copy `node_modules` from a Mac.
+`pnpm install` on the NAS no longer needs a C++ toolchain — storage uses Node's built-in `node:sqlite` (Node 22+).
+
+Do not copy `node_modules` from a Mac; install on the NAS so optional native deps (if any) match Linux.
 
 ## 3. Data
 
