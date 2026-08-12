@@ -54,13 +54,14 @@ export const TTL_OPTIONS = [
   { label: "2 天", seconds: 48 * 60 * 60 },
 ] as const;
 
+/** Display names — internal keys stay thoughtful / mathematical / deep. */
 export const DIFFICULTY_META: Record<
   Difficulty,
   { label: string; hint: string }
 > = {
-  thoughtful: { label: "沉思", hint: "约 30–90 秒" },
-  mathematical: { label: "数学", hint: "约 2–5 分钟" },
-  deep: { label: "深题", hint: "约 5–15 分钟" },
+  thoughtful: { label: "启封", hint: "约 30–90 秒" },
+  mathematical: { label: "推演", hint: "约 2–5 分钟" },
+  deep: { label: "穷理", hint: "约 5–15 分钟" },
 };
 
 export function formatRemaining(expiresAt: number, now = Date.now()): string {

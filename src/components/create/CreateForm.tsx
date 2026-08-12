@@ -339,7 +339,7 @@ export function CreateForm() {
 
       <div className="grid gap-6 sm:grid-cols-2">
         <fieldset className="space-y-2">
-          <legend className="text-sm text-ink-soft">难度</legend>
+          <legend className="text-sm text-ink-soft">门禁深度</legend>
           {(Object.keys(DIFFICULTY_META) as Difficulty[]).map((d) => (
             <label key={d} className="flex cursor-pointer items-center gap-2">
               <input

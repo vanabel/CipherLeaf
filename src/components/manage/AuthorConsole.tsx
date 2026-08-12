@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { formatRemaining } from "@/lib/capability/policy";
+import { DIFFICULTY_META, formatRemaining } from "@/lib/capability/policy";
 import {
   readFragmentKey,
   unwrapPassphrase,
@@ -56,12 +56,6 @@ const PRESET_LABEL: Record<string, string> = {
   standard: "标准",
   private: "私密",
   sensitive: "敏感",
-};
-
-const DIFFICULTY_LABEL: Record<string, string> = {
-  thoughtful: "沉思",
-  mathematical: "数学",
-  deep: "深题",
 };
 
 export function AuthorConsole() {
@@ -592,7 +586,11 @@ export function AuthorConsole() {
       <section className="space-y-2 text-sm text-ink-soft">
         <h2 className="font-display text-xl text-ink">安全设置</h2>
         <p>档位：{PRESET_LABEL[d.securityPreset] ?? d.securityPreset}</p>
-        <p>挑战：{DIFFICULTY_LABEL[d.difficulty] ?? d.difficulty}</p>
+        <p>
+          门禁：
+          {DIFFICULTY_META[d.difficulty as keyof typeof DIFFICULTY_META]?.label ??
+            d.difficulty}
+        </p>
         <p>窗口：{Math.round(d.ttlSeconds / 3600)} 小时</p>
         <p>水印：{d.watermark ? "已启用" : "关闭"}</p>
         <p>

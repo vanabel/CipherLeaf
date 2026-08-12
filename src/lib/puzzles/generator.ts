@@ -1,8 +1,26 @@
+/**
+ * CipherLeaf gate puzzles — university mathematics major persona.
+ *
+ * Pools are keyed by difficulty (display: 启封 / 推演 / 穷理):
+ * - thoughtful: one key observation + 1–3 calculations
+ * - mathematical: identify a theorem / invariant / construction + several steps
+ * - deep: combine ≥2 structures, or prove an intermediate claim, then compute
+ *
+ * Deep puzzles must NOT be obtained merely by enlarging numerical parameters
+ * of a mathematical-level puzzle. Prefer: invariants, two ideas combined,
+ * intermediate lemmas, auxiliary quantities / recurrences, complement /
+ * quotient / orbit counts, or a hidden algebraic structure.
+ *
+ * Boolean / YES-NO / multiple-choice answers are forbidden. Prefer integers,
+ * reduced rationals, short complex numbers, or other canonical short forms.
+ */
+
 export type PuzzleDifficulty = "thoughtful" | "mathematical" | "deep";
 
 export type PuzzleInstance = {
   type: string;
   prompt: string;
+  /** Canonical answer string (after normalizeAnswer). */
   answer: string;
   hint?: string;
   publicParams: Record<string, unknown>;
@@ -29,8 +47,16 @@ function gcd(a: number, b: number): number {
   return x;
 }
 
-function lcm(a: number, b: number): number {
-  return Math.abs(a * b) / gcd(a, b);
+function egcd(a: number, b: number): { g: number; x: number; y: number } {
+  if (b === 0) return { g: a, x: 1, y: 0 };
+  const { g, x, y } = egcd(b, a % b);
+  return { g, x: y, y: x - Math.floor(a / b) * y };
+}
+
+function invMod(a: number, m: number): number | null {
+  const { g, x } = egcd(((a % m) + m) % m, m);
+  if (g !== 1) return null;
+  return ((x % m) + m) % m;
 }
 
 function binom(n: number, k: number): number {
@@ -46,735 +72,886 @@ function factorial(n: number): number {
   return r;
 }
 
-/* ───────── Insight / invariants ───────── */
-
-const coinFlipInsight: Gen = (difficulty) => {
-  const n =
-    difficulty === "thoughtful"
-      ? randInt(12, 16)
-      : difficulty === "mathematical"
-        ? randInt(14, 22)
-        : randInt(18, 28);
-  const k =
-    difficulty === "thoughtful"
-      ? randInt(2, 4)
-      : difficulty === "mathematical"
-        ? randInt(3, 5)
-        : randInt(4, 6);
-  let target = randInt(1, n - 1);
-  if (Math.random() < 0.55) {
-    target =
-      k % 2 === 0
-        ? randInt(0, Math.floor((n - 1) / 2)) * 2 + 1
-        : randInt(1, n - 1);
+/** Reduced rational as "p/q" or integer string. */
+function rat(num: number, den: number): string {
+  if (den === 0) throw new Error("division by zero");
+  let n = num;
+  let d = den;
+  if (d < 0) {
+    n = -n;
+    d = -d;
   }
-  const answer: "YES" | "NO" =
-    k % 2 === 0
-      ? target % 2 === 0
-        ? "YES"
-        : "NO"
-      : n >= k
-        ? "YES"
-        : "NO";
+  const g = gcd(n, d);
+  n /= g;
+  d /= g;
+  if (d === 1) return String(n);
+  return `${n}/${d}`;
+}
 
+function matMul(A: number[][], B: number[][]): number[][] {
+  const n = A.length;
+  const m = B[0].length;
+  const p = B.length;
+  const C = Array.from({ length: n }, () => Array(m).fill(0));
+  for (let i = 0; i < n; i++)
+    for (let j = 0; j < m; j++)
+      for (let k = 0; k < p; k++) C[i][j] += A[i][k] * B[k][j];
+  return C;
+}
+
+function matPow(A: number[][], exp: number): number[][] {
+  const n = A.length;
+  let R: number[][] = Array.from({ length: n }, (_, i) =>
+    Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)),
+  );
+  let B = A.map((row) => row.slice());
+  let e = exp;
+  while (e > 0) {
+    if (e & 1) R = matMul(R, B);
+    B = matMul(B, B);
+    e >>= 1;
+  }
+  return R;
+}
+
+function chineseRemainder(mods: number[], residues: number[]): number {
+  const M = mods.reduce((a, b) => a * b, 1);
+  let sum = 0;
+  for (let i = 0; i < mods.length; i++) {
+    const Mi = M / mods[i];
+    const inv = invMod(Mi % mods[i], mods[i]);
+    if (inv == null) throw new Error("CRT moduli not copairwise");
+    sum += residues[i] * Mi * inv;
+  }
+  return ((sum % M) + M) % M;
+}
+
+function derangement(n: number): number {
+  // !n = n! Σ_{k=0}^n (-1)^k / k!
+  const nf = factorial(n);
+  let sum = 0;
+  let fact = 1;
+  for (let k = 0; k <= n; k++) {
+    if (k > 0) fact *= k;
+    sum += (k % 2 === 0 ? 1 : -1) * (nf / fact);
+  }
+  return Math.round(sum);
+}
+
+function fmtMatrix(rows: number[][]): string {
+  return (
+    "\\begin{pmatrix}\n" +
+    rows.map((r) => r.join(" & ")).join(" \\\\\n") +
+    "\n\\end{pmatrix}"
+  );
+}
+
+/* ───────── 启封 · thoughtful ───────── */
+
+const laRank: Gen = () => {
+  // Structured 3×3 with one obvious linear dependence among rows.
+  const a = randInt(1, 4);
+  const b = randInt(1, 4);
+  const c = randInt(1, 5);
+  const k = randInt(2, 3);
+  const row1 = [a, b, c];
+  const row2 = [k * a, k * b, k * c];
+  const row3 = [randInt(1, 3), randInt(0, 3), randInt(1, 4)];
+  // Ensure row3 not multiple of row1
+  if (row3[0] * b === row3[1] * a && row3[0] * c === row3[2] * a) {
+    row3[2] += 1;
+  }
   return {
-    type: "insight.coins",
-    prompt: `有 ${n} 枚硬币，全部正面朝上。每一步必须恰好翻转 ${k} 枚。是否可能最终恰好有 ${target} 枚反面？\n\n请回答 是 或 否。`,
-    answer,
-    hint: "观察模 2 下的不变量。",
-    publicParams: { n, k, target },
+    type: "linearalgebra.rank",
+    prompt: `求矩阵\n$$\nA=${fmtMatrix([row1, row2, row3])}\n$$\n的秩。`,
+    answer: "2",
+    hint: "观察行（列）之间的线性关系。",
+    publicParams: { row1, row2, row3, rank: 2 },
   };
 };
 
-/** Mutilated board: opposite corners removed. */
-const chessboardInsight: Gen = (difficulty) => {
-  const n = difficulty === "thoughtful" ? 6 : difficulty === "mathematical" ? 8 : 10;
+const laDetStructure: Gen = () => {
+  const d = randInt(2, 12);
+  // det(a+b, b, c-a) = det(a,b,c) by column operations
   return {
-    type: "insight.chessboard",
-    prompt: `一块 ${n}×${n} 棋盘去掉两个对角上的格子后，能否用 $1\\times 2$ 的骨牌完全覆盖剩余格子？\n\n请回答 是 或 否。`,
-    answer: "NO",
-    hint: "对角格子同色；染色后黑白格数量不等。",
-    publicParams: { n },
+    type: "linearalgebra.det.structure",
+    prompt: `已知列向量 $a,b,c\\in\\mathbb R^3$ 满足\n$$\n\\det(a,\\,b,\\,c)=${d}.\n$$\n求\n$$\n\\det(a+b,\\,b,\\,c-a).\n$$`,
+    answer: String(d),
+    hint: "对列做初等变换，行列式如何变化？",
+    publicParams: { d },
   };
 };
 
-/** Cup flipping / lights: sum mod m. */
-const sumModInsight: Gen = () => {
-  const m = pick([3, 4, 5]);
-  const n = randInt(m + 2, m + 6);
-  const start = Array.from({ length: n }, () => randInt(0, m - 1));
-  const targetSum = randInt(0, m - 1);
-  const startSum = start.reduce((a, b) => a + b, 0) % m;
-  // Each move adds 1 to one element mod m → can reach any sum? Actually can change one by +1, so can reach any total sum.
-  // Better: each move flips two cups by +1 each → Δsum ≡ 2 (mod m) if... 
-  // Simpler classic: chips, move transfers 1. 
-  // Use: each operation adds 1 to exactly two numbers mod m. Reachable iff targetSum ≡ startSum (mod gcd(2,m)).
-  const g = gcd(2, m);
-  const reachable = (targetSum - startSum) % g === 0;
-  // normalize mod
-  const diff = ((targetSum - startSum) % m + m) % m;
-  const answer: "YES" | "NO" = diff % g === 0 ? "YES" : "NO";
-  void reachable;
+const numberModInverse: Gen = () => {
+  const primes = [11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47];
+  const m = pick(primes);
+  let a = randInt(2, m - 2);
+  while (gcd(a, m) !== 1) a = randInt(2, m - 2);
+  const inv = invMod(a, m)!;
   return {
-    type: "insight.summod",
-    prompt: `有 ${n} 个计数器，当前读数为 $(${start.join(", ")})$。每一步任选两个计数器，各加 $1$（运算在模 ${m} 下）。能否使所有读数之和（模 ${m}）等于 $${targetSum}$？\n\n请回答 是 或 否。`,
-    answer,
-    hint: "追踪总和模 gcd(2,m)。",
-    publicParams: { m, start, targetSum },
+    type: "number.mod_inverse",
+    prompt: `求 $${a}$ 在模 $${m}$ 下的乘法逆元，取 $1\\le x<${m}$。`,
+    answer: String(inv),
+    publicParams: { a, m, inv },
   };
 };
 
-/** Handshake parity. */
-const handshakeInsight: Gen = () => {
-  const n = randInt(5, 9);
-  // Can everyone have odd degree? Sum of degrees even → odd count of odd degrees impossible if all odd and n odd.
-  const allOdd = n % 2 === 1;
-  const answer: "YES" | "NO" = allOdd ? "NO" : "YES";
-  return {
-    type: "insight.handshake",
-    prompt: `一次聚会有 ${n} 人。是否可能每个人恰好与奇数个其他人握过手？\n\n请回答 是 或 否。`,
-    answer,
-    hint: "握手引理：奇度顶点个数为偶数。",
-    publicParams: { n },
-  };
-};
-
-/* ───────── Modular arithmetic ───────── */
-
-const modularCrt: Gen = (difficulty) => {
-  let mods: number[];
-  if (difficulty === "thoughtful") mods = [5, 7];
-  else if (difficulty === "mathematical") mods = [5, 7, 9];
-  else mods = [7, 9, 11];
-  while (gcd(mods[0], mods[1]) !== 1) mods[1] += 1;
-  if (mods[2]) {
-    while (gcd(mods[0], mods[2]) !== 1 || gcd(mods[1], mods[2]) !== 1) {
-      mods[2] += 1;
+const numberCongruenceLinear: Gen = () => {
+  // Generate solvable ax ≡ b (mod m) with unique minimal positive? 
+  // When gcd(a,m) divides b, there are g solutions. Ask for the smallest positive one.
+  const m = pick([20, 24, 30, 35, 36, 40, 42]);
+  const a = randInt(4, m - 1);
+  const g = gcd(a, m);
+  const b = g * randInt(1, Math.floor((m - 1) / g));
+  // Find smallest positive x
+  let x = 0;
+  for (let t = 1; t <= m; t++) {
+    if ((a * t - b) % m === 0) {
+      x = t;
+      break;
     }
   }
-  const residues = mods.map((m) => randInt(0, m - 1));
-  const M = mods.reduce((a, b) => a * b, 1);
-  let x = 1;
-  for (; x <= M; x++) {
-    if (mods.every((m, i) => x % m === residues[i])) break;
-  }
-  const lines = mods
-    .map((m, i) => `$x \\equiv ${residues[i]} \\pmod{${m}}$`)
-    .join("\n\n");
   return {
-    type: "modular.crt",
-    prompt: `求满足下列同余式的最小正整数 $x$：\n\n${lines}`,
+    type: "number.congruence.linear",
+    prompt: `求满足\n$$\n${a}x\\equiv ${b}\\pmod{${m}}\n$$\n的**最小正整数** $x$。`,
     answer: String(x),
-    publicParams: { mods, residues },
+    publicParams: { a, b, m, x },
   };
 };
 
-const modularRemainder: Gen = (difficulty) => {
-  const a = difficulty === "deep" ? randInt(50, 200) : randInt(20, 80);
-  const b = difficulty === "deep" ? randInt(7, 19) : randInt(5, 13);
-  const r = a % b;
+const numberValuation: Gen = () => {
+  const n = pick([50, 60, 80, 100, 120]);
+  const p = pick([2, 3, 5]);
+  let v = 0;
+  for (let pk = p; pk <= n; pk *= p) v += Math.floor(n / pk);
   return {
-    type: "modular.remainder",
-    prompt: `求 $${a} \\bmod ${b}$，即 $${a}$ 除以 $${b}$ 的余数。`,
-    answer: String(r),
-    publicParams: { a, b, r },
-  };
-};
-
-const modularPower: Gen = (difficulty) => {
-  const base = randInt(2, 9);
-  const exp =
-    difficulty === "thoughtful"
-      ? randInt(3, 5)
-      : difficulty === "mathematical"
-        ? randInt(5, 9)
-        : randInt(8, 14);
-  const mod =
-    difficulty === "deep" ? pick([7, 11, 13, 17]) : pick([5, 7, 9, 11, 13]);
-  let v = 1;
-  for (let i = 0; i < exp; i++) v = (v * base) % mod;
-  return {
-    type: "modular.power",
-    prompt: `计算 $${base}^{${exp}} \\bmod ${mod}$。`,
+    type: "number.valuation",
+    prompt: `$${n}!$ 中因子 $${p}$ 的最高次数（即 $v_{${p}}(${n}!)$）是多少？`,
     answer: String(v),
-    hint: "可逐步取模，避免直接算大数。",
-    publicParams: { base, exp, mod, v },
+    publicParams: { n, p, v },
   };
 };
 
-const lastDigit: Gen = (difficulty) => {
-  const base = randInt(2, 9);
-  const exp =
-    difficulty === "thoughtful"
-      ? randInt(4, 8)
-      : difficulty === "mathematical"
-        ? randInt(8, 18)
-        : randInt(20, 40);
-  let d = 1;
-  for (let i = 0; i < exp; i++) d = (d * base) % 10;
+const combinatoricsInclusion2: Gen = () => {
+  const N = pick([60, 80, 100, 120]);
+  const a = pick([3, 4, 5]);
+  let b = pick([5, 6, 7, 8]);
+  while (gcd(a, b) === 1 && Math.random() < 0.3) b = pick([5, 6, 7, 8]);
+  // ensure a ≠ b
+  if (b === a) b = a + 2;
+  const l = (a * b) / gcd(a, b);
+  const ans =
+    Math.floor(N / a) + Math.floor(N / b) - Math.floor(N / l);
   return {
-    type: "modular.lastdigit",
-    prompt: `$${base}^{${exp}}$ 的个位数是多少？`,
-    answer: String(d),
-    publicParams: { base, exp, d },
+    type: "combinatorics.inclusion2",
+    prompt: `在 $1,\\dots,${N}$ 中，有多少个整数能被 $${a}$ 或 $${b}$ 整除？`,
+    answer: String(ans),
+    hint: "容斥：$|A\\cup B|=|A|+|B|-|A\\cap B|$。",
+    publicParams: { N, a, b, ans },
   };
 };
 
-/* ───────── Sequences ───────── */
-
-const sequenceRecurrence: Gen = (difficulty) => {
-  const a = randInt(2, 9);
-  const b = randInt(1, 6);
-  const len = difficulty === "deep" ? 8 : 6;
-  const seq: number[] = [];
-  let cur = a;
-  for (let i = 0; i < len; i++) {
-    seq.push(cur);
-    cur = cur * b + (i % 2 === 0 ? 1 : -1);
-  }
-  const next = cur;
-  return {
-    type: "sequence.recurrence",
-    prompt: `数列开头为：\n\n$${seq.join(", ")}\\,,\\;\\dots$\n\n从第二项起满足\n\n$$x_n = ${b}\\cdot x_{n-1} + (-1)^{n-1}$$\n\n下一项是多少？`,
-    answer: String(next),
-    publicParams: { seq, b, next },
-  };
-};
-
-const sequenceArithmetic: Gen = () => {
-  const a = randInt(1, 20);
-  const d = randInt(2, 9);
-  const n = randInt(6, 12);
-  const seq = Array.from({ length: 5 }, (_, i) => a + i * d);
-  const term = a + (n - 1) * d;
-  return {
-    type: "sequence.arithmetic",
-    prompt: `等差数列前几项为 $${seq.join(", ")}, \\dots$。求第 $${n}$ 项。`,
-    answer: String(term),
-    publicParams: { a, d, n, term },
-  };
-};
-
-const sequenceGeometric: Gen = () => {
-  const a = randInt(1, 5);
-  const r = randInt(2, 4);
-  const n = randInt(4, 7);
-  const seq = Array.from({ length: 4 }, (_, i) => a * r ** i);
-  const term = a * r ** (n - 1);
-  return {
-    type: "sequence.geometric",
-    prompt: `等比数列前几项为 $${seq.join(", ")}, \\dots$。求第 $${n}$ 项。`,
-    answer: String(term),
-    publicParams: { a, r, n, term },
-  };
-};
-
-const sequenceFibonacciLike: Gen = () => {
-  const a = randInt(1, 5);
-  const b = randInt(1, 8);
-  const seq = [a, b];
-  for (let i = 0; i < 5; i++) seq.push(seq[seq.length - 1] + seq[seq.length - 2]);
-  const next = seq[seq.length - 1] + seq[seq.length - 2];
-  const shown = seq.slice(0, 6);
-  return {
-    type: "sequence.fiblike",
-    prompt: `数列满足 $x_n = x_{n-1} + x_{n-2}$，开头为 $${shown.join(", ")}, \\dots$。下一项是多少？`,
-    answer: String(next),
-    publicParams: { shown, next },
-  };
-};
-
-const sequenceDigitSum: Gen = () => {
-  const n = randInt(100, 999);
-  const s = String(n)
-    .split("")
-    .reduce((a, c) => a + Number(c), 0);
-  return {
-    type: "sequence.digitsum",
-    prompt: `求正整数 $${n}$ 的各位数字之和。`,
-    answer: String(s),
-    publicParams: { n, s },
-  };
-};
-
-/* ───────── Combinatorics ───────── */
-
-const combinatoricsLattice: Gen = (difficulty) => {
-  const w = difficulty === "thoughtful" ? 2 : difficulty === "mathematical" ? 3 : 4;
-  const h = difficulty === "thoughtful" ? 2 : 3;
-  const ways = binom(w + h, w);
-  return {
-    type: "combinatorics.lattice",
-    prompt: `在一个 ${w}×${h} 的单位方格网格上，只允许向东或向北走一格。从西南角到东北角的最短路径有多少条？`,
-    answer: String(ways),
-    publicParams: { w, h },
-  };
-};
-
-const combinatoricsChoose: Gen = (difficulty) => {
-  const n = difficulty === "deep" ? randInt(8, 12) : randInt(5, 9);
-  const k = randInt(2, Math.min(4, n - 1));
-  return {
-    type: "combinatorics.choose",
-    prompt: `从 ${n} 个人中选出 ${k} 人组成委员会（不计顺序），有多少种选法？`,
-    answer: String(binom(n, k)),
-    publicParams: { n, k },
-  };
-};
-
-const combinatoricsPermute: Gen = () => {
-  const n = randInt(4, 7);
-  const k = randInt(2, Math.min(4, n));
-  let p = 1;
-  for (let i = 0; i < k; i++) p *= n - i;
-  return {
-    type: "combinatorics.permute",
-    prompt: `从 ${n} 本书中选出 ${k} 本排成一列放在书架上，有多少种排法？`,
-    answer: String(p),
-    publicParams: { n, k, p },
-  };
-};
-
-const combinatoricsSubset: Gen = () => {
-  const n = randInt(4, 8);
-  return {
-    type: "combinatorics.subset",
-    prompt: `一个 ${n} 元集合有多少个子集（含空集与全集）？`,
-    answer: String(2 ** n),
-    publicParams: { n },
-  };
-};
-
-const combinatoricsHandshake: Gen = () => {
-  const n = randInt(5, 12);
-  return {
-    type: "combinatorics.handshake",
-    prompt: `聚会上有 ${n} 人，每两人恰好握手一次。一共握了多少次手？`,
-    answer: String(binom(n, 2)),
-    publicParams: { n },
-  };
-};
-
-const combinatoricsPascal: Gen = () => {
-  const n = randInt(4, 8);
-  const k = randInt(1, n - 1);
-  return {
-    type: "combinatorics.pascal",
-    prompt: `二项式系数 $\\binom{${n}}{${k}}$ 等于多少？`,
-    answer: String(binom(n, k)),
-    publicParams: { n, k },
-  };
-};
-
-/* ───────── Graph / structure ───────── */
-
-const graphPathCount: Gen = (difficulty) => {
-  // Small DAG: layers
-  const layers = difficulty === "thoughtful" ? 3 : 4;
-  // Complete bipartite-ish between consecutive layers of size 2
-  // paths from start to end through layers of 2 nodes each: 2^(layers-1) if start/end single
-  // Simpler: complete binary choices
-  const choices = difficulty === "deep" ? 4 : 3;
-  const ways = 2 ** choices;
-  return {
-    type: "graph.paths",
-    prompt: `从 $A$ 到 $B$ 要经过 ${choices} 个关卡，每个关卡有 $2$ 条互不相关的通道可选。从 $A$ 到 $B$ 共有多少条不同路径？`,
-    answer: String(ways),
-    publicParams: { choices, ways },
-  };
-};
-
-const graphDegreeSum: Gen = () => {
-  const degrees = [randInt(1, 4), randInt(1, 4), randInt(1, 4), randInt(1, 4)];
-  // Force even sum
-  if (degrees.reduce((a, b) => a + b, 0) % 2 === 1) degrees[0] += 1;
-  const edges = degrees.reduce((a, b) => a + b, 0) / 2;
-  return {
-    type: "graph.degrees",
-    prompt: `一个图有 $4$ 个顶点，度数分别为 $${degrees.join(", ")}$。它有多少条边？`,
-    answer: String(edges),
-    hint: "边数 = 度数和 / 2。",
-    publicParams: { degrees, edges },
-  };
-};
-
-const tournamentGames: Gen = () => {
-  const n = randInt(4, 9);
-  return {
-    type: "graph.tournament",
-    prompt: `${n} 支球队进行单循环赛（每两队赛一场）。一共要进行多少场比赛？`,
-    answer: String(binom(n, 2)),
-    publicParams: { n },
-  };
-};
-
-/* ───────── Logic / number constraints ───────── */
-
-const logicLinear: Gen = (difficulty) => {
-  const a = randInt(3, difficulty === "deep" ? 12 : 9);
-  const b = randInt(3, difficulty === "deep" ? 12 : 9);
-  const c = a + b;
-  const decoy = a + b + randInt(1, 3);
-  return {
-    type: "logic.constraints",
-    prompt: `正整数 $x, y, z$ 满足：\n\n1. $x + y = z$\n2. $x < y$\n3. $z = ${c}$\n4. $y - x = ${b - a}$\n\n$x$ 等于多少？\n\n（可忽略干扰值 $${decoy}$。）`,
-    answer: String(a),
-    publicParams: { a, b, c },
-  };
-};
-
-const logicAges: Gen = () => {
-  const child = randInt(5, 12);
-  const parent = child + randInt(22, 35);
-  const sum = child + parent;
-  const diff = parent - child;
-  return {
-    type: "logic.ages",
-    prompt: `父与子现在年龄之和为 ${sum}，父亲比儿子大 ${diff} 岁。儿子现在多少岁？`,
-    answer: String(child),
-    publicParams: { child, parent },
-  };
-};
-
-const logicChickens: Gen = () => {
-  // classic: x chickens y rabbits, x+y=heads, 2x+4y=legs
-  const chickens = randInt(2, 12);
-  const rabbits = randInt(2, 10);
-  const heads = chickens + rabbits;
-  const legs = 2 * chickens + 4 * rabbits;
-  return {
-    type: "logic.chickens",
-    prompt: `笼子里有鸡和兔，共 ${heads} 个头、${legs} 只脚。鸡有多少只？`,
-    answer: String(chickens),
-    publicParams: { chickens, rabbits, heads, legs },
-  };
-};
-
-const logicGcdLcm: Gen = (difficulty) => {
-  const a = randInt(6, 24);
-  const b = randInt(6, 24);
-  if (difficulty === "thoughtful" || Math.random() < 0.5) {
-    return {
-      type: "number.gcd",
-      prompt: `求 $\\gcd(${a}, ${b})$。`,
-      answer: String(gcd(a, b)),
-      publicParams: { a, b },
-    };
-  }
-  return {
-    type: "number.lcm",
-    prompt: `求 $\\mathrm{lcm}(${a}, ${b})$。`,
-    answer: String(lcm(a, b)),
-    publicParams: { a, b },
-  };
-};
-
-const logicDivisors: Gen = () => {
-  const n = pick([12, 18, 20, 24, 28, 30, 36, 42, 48, 60]);
-  let count = 0;
-  for (let i = 1; i <= n; i++) if (n % i === 0) count++;
-  return {
-    type: "number.divisors",
-    prompt: `正整数 $${n}$ 有多少个正因数？`,
-    answer: String(count),
-    publicParams: { n, count },
-  };
-};
-
-const logicPigeonhole: Gen = () => {
-  const holes = randInt(3, 7);
-  const need = holes + 1;
-  return {
-    type: "logic.pigeonhole",
-    prompt: `把若干只鸽子放入 ${holes} 个笼子。为保证至少有一个笼子里不少于 $2$ 只鸽子，最少需要放多少只鸽子？`,
-    answer: String(need),
-    publicParams: { holes, need },
-  };
-};
-
-/* ───────── Geometry ───────── */
-
-const geometryTriangle: Gen = (difficulty) => {
-  const a = randInt(20, 50);
-  const b = difficulty === "thoughtful" ? 90 - a : randInt(20, 70);
-  const c = 180 - a - b;
-  return {
-    type: "geometry.triangle",
-    prompt: `在 $\\triangle ABC$ 中，$\\angle A = ${a}^\\circ$，$\\angle B = ${b}^\\circ$。$\\angle C$ 的度数是多少？`,
-    answer: String(c),
-    publicParams: { a, b, c },
-  };
-};
-
-const geometryIsosceles: Gen = () => {
-  const base = randInt(20, 50);
-  const vertex = 180 - 2 * base;
-  // Given vertex, find base
-  return {
-    type: "geometry.isosceles",
-    prompt: `等腰三角形顶角为 $${vertex}^\\circ$，求一个底角的度数。`,
-    answer: String(base),
-    publicParams: { base, vertex },
-  };
-};
-
-const geometryRectangle: Gen = () => {
-  const w = randInt(3, 12);
-  const h = randInt(3, 12);
-  return {
-    type: "geometry.rect",
-    prompt: `长方形的长为 $${w}$、宽为 $${h}$。它的周长是多少？`,
-    answer: String(2 * (w + h)),
-    publicParams: { w, h },
-  };
-};
-
-const geometryArea: Gen = () => {
-  const b = randInt(4, 14);
-  const h = randInt(3, 12);
-  return {
-    type: "geometry.area",
-    prompt: `三角形底边长 $${b}$，对应高为 $${h}$。面积是多少？`,
-    answer: String((b * h) / 2),
-    publicParams: { b, h },
-  };
-};
-
-const geometryParallel: Gen = () => {
-  const a = randInt(35, 75);
-  // corresponding / alternate: if parallel, alternate interior equal
-  return {
-    type: "geometry.parallel",
-    prompt: `两条平行线被一条截线所截，其中一个内错角为 $${a}^\\circ$。另一个内错角是多少度？`,
-    answer: String(a),
-    publicParams: { a },
-  };
-};
-
-const geometryCircle: Gen = () => {
-  const central = randInt(40, 120);
-  const inscribed = central / 2;
-  // only even centrals for integer answer
-  const c = central % 2 === 0 ? central : central + 1;
-  return {
-    type: "geometry.circle",
-    prompt: `同弧所对的圆心角为 $${c}^\\circ$。则该弧所对的圆周角是多少度？`,
-    answer: String(c / 2),
-    publicParams: { c, inscribed: c / 2 },
-  };
-};
-
-const geometryPythagorean: Gen = (difficulty) => {
-  const triples = [
-    [3, 4, 5],
-    [5, 12, 13],
-    [6, 8, 10],
-    [7, 24, 25],
-    [8, 15, 17],
-    [9, 12, 15],
+const combinatoricsWords: Gen = () => {
+  // Multiset permutations of length n with repeated letters
+  const patterns: { letters: string; counts: number[] }[] = [
+    { letters: "A,A,B,B,C", counts: [2, 2, 1] },
+    { letters: "A,A,A,B,B", counts: [3, 2] },
+    { letters: "A,A,B,B,C,C", counts: [2, 2, 2] },
+    { letters: "A,A,B,C,C", counts: [2, 1, 2] },
   ];
-  const pool =
-    difficulty === "thoughtful" ? triples.slice(0, 3) : triples;
-  const [a, b, c] = pick(pool);
-  const ask = pick(["a", "b", "c"] as const);
-  if (ask === "c") {
+  const pat = pick(patterns);
+  const n = pat.counts.reduce((s, c) => s + c, 0);
+  let ans = factorial(n);
+  for (const c of pat.counts) ans /= factorial(c);
+  return {
+    type: "combinatorics.words",
+    prompt: `用字母 $${pat.letters}$ 排成长度为 $${n}$ 的字符串，共有多少种不同排列？`,
+    answer: String(ans),
+    publicParams: { letters: pat.letters, counts: pat.counts, ans },
+  };
+};
+
+const graphDegreeMissing: Gen = () => {
+  const n = randInt(6, 8);
+  const edges = randInt(n - 1, Math.floor((n * (n - 1)) / 4));
+  const sumNeed = 2 * edges;
+  // Build n-1 degrees, last determined
+  const degs: number[] = [];
+  let rem = sumNeed;
+  for (let i = 0; i < n - 1; i++) {
+    const left = n - 1 - i;
+    const maxD = Math.min(n - 1, rem - left); // leave at least 1 for each remaining? allow 1..
+    const minD = Math.max(1, rem - left * (n - 1));
+    const d = randInt(Math.max(1, minD), Math.max(Math.max(1, minD), maxD));
+    degs.push(d);
+    rem -= d;
+  }
+  const dLast = rem;
+  if (dLast < 1 || dLast > n - 1) {
+    // fallback fixed example
     return {
-      type: "geometry.pythagoras",
-      prompt: `直角三角形两条直角边为 $${a}$ 与 $${b}$。斜边长是多少？`,
-      answer: String(c),
-      publicParams: { a, b, c },
+      type: "graph.degree.missing",
+      prompt: `一个简单图有 $7$ 个顶点，其度数为\n$$\n1,2,2,3,3,4,d.\n$$\n若总边数为 $9$，求 $d$。`,
+      answer: "3",
+      publicParams: { n: 7, edges: 9, d: 3 },
     };
   }
-  if (ask === "a") {
-    return {
-      type: "geometry.pythagoras",
-      prompt: `直角三角形一条直角边为 $${b}$，斜边为 $${c}$。另一条直角边长是多少？`,
-      answer: String(a),
-      publicParams: { a, b, c },
-    };
-  }
+  const shown = [...degs, "d"];
   return {
-    type: "geometry.pythagoras",
-    prompt: `直角三角形一条直角边为 $${a}$，斜边为 $${c}$。另一条直角边长是多少？`,
-    answer: String(b),
-    publicParams: { a, b, c },
+    type: "graph.degree.missing",
+    prompt: `一个简单图有 $${n}$ 个顶点，其度数为\n$$\n${shown.join(",")}.\n$$\n若总边数为 $${edges}$，求 $d$。`,
+    answer: String(dLast),
+    hint: "边数 = 度数和 / 2。",
+    publicParams: { n, edges, degs, d: dLast },
   };
 };
 
-/* ───────── Algebra / misc attention ───────── */
-
-const algebraLinear: Gen = () => {
-  const x = randInt(2, 15);
-  const a = randInt(2, 7);
-  const b = randInt(1, 20);
-  const rhs = a * x + b;
+const analysisLimitStandard: Gen = () => {
+  const a = pick([1, 2, 3]);
+  const exp = a === 1 ? "x" : `${a}x`;
+  const linear = a === 1 ? "x" : `${a}x`;
   return {
-    type: "algebra.linear",
-    prompt: `解方程 $${a}x + ${b} = ${rhs}$，求 $x$。`,
-    answer: String(x),
-    publicParams: { a, b, x },
+    type: "analysis.limit.standard",
+    prompt: `计算\n$$\n\\lim_{x\\to 0}\\frac{e^{${exp}}-1-${linear}}{x^2}.\n$$`,
+    answer: rat(a * a, 2),
+    hint: "Taylor：$e^u=1+u+u^2/2+o(u^2)$。",
+    publicParams: { a, ans: rat(a * a, 2) },
   };
 };
 
-const algebraMean: Gen = () => {
-  const nums = Array.from({ length: 4 }, () => randInt(2, 20));
-  const sum = nums.reduce((a, b) => a + b, 0);
-  // Ask for number to add to make mean m
-  const m = randInt(5, 15);
-  // (sum + x)/5 = m → x = 5m - sum
-  const x = 5 * m - sum;
+const analysisIntegralSymmetry: Gen = () => {
+  const L = pick([1, 2, 3]);
+  // ∫_{-L}^{L} (x^5 + 3 x^2 + d) — odd part vanishes; 2*3*L^3/3 + 2dL = 2 L^3 + 2dL
+  const d2 = randInt(1, 5);
+  const integral = 2 * L * L * L + 2 * d2 * L;
   return {
-    type: "algebra.mean",
-    prompt: `四个数 $${nums.join(", ")}$。再添一个数，使这五个数的平均值为 $${m}$。添的数是多少？`,
-    answer: String(x),
-    publicParams: { nums, m, x },
+    type: "analysis.integral.symmetry",
+    prompt: `计算\n$$\n\\int_{-${L}}^{${L}}\\bigl(x^5+3x^2+${d2}\\bigr)\\,dx.\n$$`,
+    answer: String(integral),
+    hint: "奇函数在对称区间积分为零。",
+    publicParams: { L, c: 3, d: d2, integral },
   };
 };
 
-const algebraFactorial: Gen = () => {
-  const n = randInt(4, 7);
+const analysisDerivativeInverse: Gen = () => {
+  const x0 = randInt(2, 5);
+  const y0 = randInt(3, 9);
+  const fp = randInt(2, 6);
   return {
-    type: "algebra.factorial",
-    prompt: `计算 $${n}!$。`,
-    answer: String(factorial(n)),
+    type: "analysis.derivative.inverse",
+    prompt: `若 $f(${x0})=${y0}$，$f'(${x0})=${fp}$，且 $f$ 在邻域内可逆，求\n$$\n(f^{-1})'(${y0}).\n$$`,
+    answer: rat(1, fp),
+    hint: "$(f^{-1})'(f(a))=1/f'(a)$。",
+    publicParams: { x0, y0, fp },
+  };
+};
+
+const algebraPolynomialComplex: Gen = () => {
+  const p = randInt(1, 5);
+  const q = randInt(0, 5);
+  // P(x) ≡ p + q x  (mod x^2+1)  → P(i)= p + q i
+  // Wait user: P ≡ 2x+1 → P(i)=1+2i
+  return {
+    type: "algebra.polynomial.complex_mod",
+    prompt: `已知多项式 $P(x)$ 满足\n$$\nP(x)\\equiv ${q}x+${p}\\pmod{x^2+1}.\n$$\n求 $P(i)$（写成 $a+bi$ 的形式，$a,b\\in\\mathbb Z$）。`,
+    answer: q === 0 ? String(p) : p === 0 ? `${q}i` : `${p}+${q}i`,
+    hint: "在同余类中代入 $x=i$，注意 $i^2=-1$。",
+    publicParams: { p, q },
+  };
+};
+
+const probabilityHypergeom: Gen = () => {
+  const red = randInt(3, 6);
+  const blue = randInt(2, 5);
+  const draw = 2;
+  // exactly 1 red
+  const ansNum = binom(red, 1) * binom(blue, 1);
+  const ansDen = binom(red + blue, draw);
+  return {
+    type: "probability.hypergeom.small",
+    prompt: `一个袋中有 $${red}$ 个红球、$${blue}$ 个蓝球，不放回抽取 $${draw}$ 个。恰好抽到一个红球的概率是多少？（写成分数。）`,
+    answer: rat(ansNum, ansDen),
+    publicParams: { red, blue, draw, ansNum, ansDen },
+  };
+};
+
+const setCardinalityIE: Gen = () => {
+  const A = randInt(12, 25);
+  const B = randInt(10, 22);
+  const inter = randInt(3, Math.min(A, B) - 1);
+  const union = A + B - inter;
+  return {
+    type: "set.cardinality.ie",
+    prompt: `$|A|=${A}$，$|B|=${B}$，$|A\\cup B|=${union}$。求 $|A\\cap B|$。`,
+    answer: String(inter),
+    publicParams: { A, B, union, inter },
+  };
+};
+
+const sequenceTelescoping: Gen = () => {
+  const n = randInt(6, 15);
+  // Σ 1/(k(k+1)) = 1 - 1/(n+1) = n/(n+1)
+  return {
+    type: "sequence.telescoping",
+    prompt: `计算\n$$\n\\sum_{k=1}^{${n}}\\frac{1}{k(k+1)}.\n$$\n（写成分数。）`,
+    answer: rat(n, n + 1),
+    hint: "裂项：$\\frac{1}{k(k+1)}=\\frac{1}{k}-\\frac{1}{k+1}$。",
     publicParams: { n },
   };
 };
 
-const algebraPercent: Gen = () => {
-  const base = randInt(40, 200);
-  const p = pick([10, 15, 20, 25, 30, 40, 50]);
+/* ───────── 推演 · mathematical ───────── */
+
+const laMatrixPower: Gen = () => {
+  const a = randInt(1, 3);
+  const b = randInt(1, 4);
+  const n = randInt(8, 25);
+  // [[a,b],[0,a]]^n → upper-right = n b a^{n-1}
+  const entry = n * b * a ** (n - 1);
   return {
-    type: "algebra.percent",
-    prompt: `$${base}$ 的 $${p}\\%$ 是多少？`,
-    answer: String((base * p) / 100),
-    publicParams: { base, p },
+    type: "linearalgebra.matrixpower",
+    prompt: `设\n$$\nA=${fmtMatrix([
+      [a, b],
+      [0, a],
+    ])}.\n$$\n求 $A^{${n}}$ 的右上角元素。`,
+    answer: String(entry),
+    hint: "这类矩阵是 Jordan 块的标量倍数；归纳或二项式。",
+    publicParams: { a, b, n, entry },
   };
 };
 
-const matrixDet2: Gen = () => {
-  const a = randInt(1, 6);
-  const b = randInt(0, 6);
-  const c = randInt(0, 6);
-  const d = randInt(1, 6);
-  const det = a * d - b * c;
+const laTraceEigen: Gen = () => {
+  // eigenvalues 2, -1, λ; tr(A^2)=4+1+λ^2=14 → λ^2=9 → λ=3 (λ>0)
   return {
-    type: "algebra.det2",
-    prompt: `计算行列式 $\\begin{vmatrix} ${a} & ${b} \\\\ ${c} & ${d} \\end{vmatrix}$。`,
-    answer: String(det),
-    publicParams: { a, b, c, d, det },
+    type: "linearalgebra.traceeigen",
+    prompt: `一个 $3\\times 3$ 实矩阵的特征值为 $2,-1,\\lambda$，且 $\\operatorname{tr}(A^2)=14$。若 $\\lambda>0$，求 $\\lambda$。`,
+    answer: "3",
+    hint: "$\\operatorname{tr}(A^2)=\\sum\\lambda_i^2$。",
+    publicParams: { ans: 3 },
+  };
+};
+
+const laKernelDim: Gen = () => {
+  // dim ker of 2 independent constraints in R^4 → 2
+  // Or randomize ambient dim
+  const n = pick([4, 5]);
+  const rank = 2;
+  return {
+    type: "linearalgebra.kernel.intersection",
+    prompt: `在 $\\mathbb R^{${n}}$ 中，\n$$\nV=\\{x:x_1+x_2+\\cdots+x_{${n}}=0,\\quad x_1-x_2=0\\}.\n$$\n求 $\\dim V$。（两约束线性无关。）`,
+    answer: String(n - rank),
+    publicParams: { n, rank },
+  };
+};
+
+const numberCrtHidden: Gen = () => {
+  // n ≡ -1 mod 5, -2 mod 7, -3 mod 8
+  const mods = [5, 7, 8];
+  const residues = [4, 5, 5]; // -1,-2,-3 mod
+  const n = chineseRemainder(mods, residues);
+  return {
+    type: "number.crt.hidden",
+    prompt: `求最小正整数 $n$，使\n$$\nn+1\\equiv 0\\pmod{5},\\qquad n+2\\equiv 0\\pmod{7},\\qquad n+3\\equiv 0\\pmod{8}.\n$$`,
+    answer: String(n === 0 ? 5 * 7 * 8 : n),
+    publicParams: { n: n === 0 ? 280 : n },
+  };
+};
+
+const numberOrder: Gen = () => {
+  const mods = [
+    { m: 13, a: 2, ord: 12 },
+    { m: 17, a: 3, ord: 8 }, // 3^8=6561≡1? check: order of 3 mod 17 is 8
+    { m: 11, a: 2, ord: 10 },
+    { m: 19, a: 2, ord: 18 },
+  ];
+  // Verify order dynamically
+  const m = pick([11, 13, 17, 19]);
+  let a = pick([2, 3, 5]);
+  while (gcd(a, m) !== 1) a = pick([2, 3, 5, 7]);
+  let ord = 1;
+  let p = a % m;
+  while (p !== 1) {
+    p = (p * a) % m;
+    ord++;
+    if (ord > m) break;
+  }
+  return {
+    type: "number.order",
+    prompt: `求 $${a}$ 在模 $${m}$ 乘法群 $(\\mathbb Z/${m}\\mathbb Z)^\\times$ 中的阶。`,
+    answer: String(ord),
+    publicParams: { a, m, ord },
+  };
+};
+
+const numberSquareMod: Gen = () => {
+  const m = 24;
+  const sols: number[] = [];
+  for (let x = 0; x < m; x++) if ((x * x - 1) % m === 0) sols.push(x);
+  const sum = sols.reduce((a, b) => a + b, 0);
+  return {
+    type: "number.squaremod",
+    prompt: `求满足\n$$\nx^2\\equiv 1\\pmod{${m}},\\qquad 0\\le x<${m}\n$$\n的所有 $x$ 之和。`,
+    answer: String(sum),
+    publicParams: { m, sols, sum },
+  };
+};
+
+const combinatoricsNoAdjacent: Gen = () => {
+  const n = randInt(8, 12);
+  const k = randInt(3, 5);
+  const ans = binom(n - k + 1, k);
+  return {
+    type: "combinatorics.noadjacent",
+    prompt: `从 $\\{1,\\dots,${n}\\}$ 中选出 $${k}$ 个数，使任意两个都不相邻，共有多少种选法？`,
+    answer: String(ans),
+    hint: "令 $y_i=x_i-(i-1)$，化为无限制组合。",
+    publicParams: { n, k, ans },
+  };
+};
+
+const combinatoricsSurjection: Gen = () => {
+  const n = 5;
+  const k = 3;
+  // k! S(n,k) = Σ (-1)^{k-i} C(k,i) i^n
+  let ans = 0;
+  for (let i = 0; i <= k; i++) {
+    const sign = (k - i) % 2 === 0 ? 1 : -1;
+    ans += sign * binom(k, i) * i ** n;
+  }
+  return {
+    type: "combinatorics.surjection.small",
+    prompt: `将 $${n}$ 个不同的球放入 $${k}$ 个不同的盒子，并要求每个盒子至少一个球，共有多少种方法？`,
+    answer: String(ans),
+    hint: "满射计数 / 容斥。",
+    publicParams: { n, k, ans },
+  };
+};
+
+const combinatoricsCircular: Gen = () => {
+  const n = randInt(5, 7);
+  // (n-1)! - 2(n-2)!
+  const ans = factorial(n - 1) - 2 * factorial(n - 2);
+  return {
+    type: "combinatorics.circular",
+    prompt: `$${n}$ 个人围圆桌而坐，若其中两人 $A$ 与 $B$ 不相邻，共有多少种坐法？（旋转视为相同，镜面翻转视为不同。）`,
+    answer: String(ans),
+    publicParams: { n, ans },
+  };
+};
+
+const graphWalksMatrix: Gen = () => {
+  const A = [
+    [0, 1, 1],
+    [1, 0, 1],
+    [1, 1, 0],
+  ];
+  const k = pick([3, 4, 5]);
+  const Ak = matPow(A, k);
+  const ans = Ak[0][0];
+  return {
+    type: "graph.walks.matrix",
+    prompt: `图的邻接矩阵为\n$$\nA=${fmtMatrix(A)}.\n$$\n从顶点 $1$ 出发经过恰好 $${k}$ 条边回到顶点 $1$ 的游走有多少条？`,
+    answer: String(ans),
+    hint: "$(A^k)_{ij}$ 计数长度为 $k$ 的 $i\\to j$ 游走。",
+    publicParams: { k, ans },
+  };
+};
+
+const graphTreeLeaves: Gen = () => {
+  // n vertices, k vertices of degree 4, remaining internal deg 2, rest leaves
+  const n = pick([10, 12, 14]);
+  const k = pick([2, 3]);
+  const m = n - 2 - 3 * k; // internal deg-2 count
+  if (m < 0) {
+    return {
+      type: "graph.tree.leaves",
+      prompt: `一棵有 $12$ 个顶点的树恰有 $3$ 个度数为 $4$ 的顶点，其余非叶顶点度数均为 $2$。求叶子数。`,
+      answer: "8",
+      publicParams: { n: 12, k: 3, leaves: 8 },
+    };
+  }
+  const leaves = n - k - m;
+  return {
+    type: "graph.tree.leaves",
+    prompt: `一棵有 $${n}$ 个顶点的树恰有 $${k}$ 个度数为 $4$ 的顶点，其余非叶顶点度数均为 $2$。求叶子数。`,
+    answer: String(leaves),
+    hint: "树：$\\sum\\deg=2(n-1)$。",
+    publicParams: { n, k, m, leaves },
+  };
+};
+
+const analysisLimitParameter: Gen = () => {
+  // lim (sin x - x + a x^3)/x^3 = 0 → a = 1/6
+  // because sin x = x - x^3/6 + o(x^3)
+  return {
+    type: "analysis.limit.parameter",
+    prompt: `求实数 $a$，使\n$$\n\\lim_{x\\to 0}\\frac{\\sin x-x+a x^3}{x^3}=0.\n$$`,
+    answer: "1/6",
+    hint: "$\\sin x=x-x^3/6+o(x^3)$。",
+    publicParams: { a: "1/6" },
+  };
+};
+
+const analysisIntegralParameter: Gen = () => {
+  // ∫_0^1 x(1-x)^n dx = B(2,n+1)= n! / (n+2)!
+  const n = randInt(3, 6);
+  const ans = rat(factorial(n), factorial(n + 2));
+  return {
+    type: "analysis.integral.parameter",
+    prompt: `求\n$$\n\\int_0^1 x(1-x)^{${n}}\\,dx.\n$$\n（写成分数。）`,
+    answer: ans,
+    publicParams: { n, ans },
+  };
+};
+
+const analysisRecursiveIntegral: Gen = () => {
+  // I_6/I_2 = 5/16
+  return {
+    type: "analysis.recursive.integral",
+    prompt: `设\n$$\nI_n=\\int_0^{\\pi/2}\\sin^n x\\,dx.\n$$\n已知 $I_2=\\pi/4$，求 $I_6/I_2$（写成分数）。`,
+    answer: "5/16",
+    hint: "递推：$I_n=\\frac{n-1}{n}I_{n-2}$。",
+    publicParams: { ans: "5/16" },
+  };
+};
+
+const probabilityConditioning: Gen = () => {
+  // Two dice, P(sum=8 | sum even)
+  // Even sums: 2,4,6,8,10,12 → 1+3+5+5+3+1=18
+  // Sum 8: 5 ways
+  return {
+    type: "probability.conditioning",
+    prompt: `连续掷两枚公平骰子。已知点数和为偶数，求点数和为 $8$ 的条件概率。（写成分数。）`,
+    answer: "5/18",
+    publicParams: { ans: "5/18" },
+  };
+};
+
+const polynomialVieta: Gen = () => {
+  const s1 = randInt(2, 6);
+  const s2 = randInt(-4, 4);
+  // a^2+b^2+c^2 = s1^2 - 2 s2
+  const ans = s1 * s1 - 2 * s2;
+  return {
+    type: "polynomial.vieta",
+    prompt: `首一三次多项式的三个根为 $a,b,c$，满足\n$$\na+b+c=${s1},\\qquad ab+bc+ca=${s2}.\n$$\n求 $a^2+b^2+c^2$。`,
+    answer: String(ans),
+    publicParams: { s1, s2, ans },
+  };
+};
+
+const algebraGroupOrder: Gen = () => {
+  // order of product of disjoint cycles = lcm of lengths
+  const cases = [
+    { desc: "(1\\,2\\,3)(4\\,5\\,6\\,7)", ord: 12, n: 7 },
+    { desc: "(1\\,2)(3\\,4\\,5)", ord: 6, n: 5 },
+    { desc: "(1\\,2\\,3\\,4)(5\\,6\\,7)", ord: 12, n: 7 },
+    { desc: "(1\\,2\\,3)(4\\,5)", ord: 6, n: 5 },
+  ];
+  const c = pick(cases);
+  return {
+    type: "algebra.group.order",
+    prompt: `在对称群 $S_{${c.n}}$ 中，置换\n$$\n${c.desc}\n$$\n的阶是多少？`,
+    answer: String(c.ord),
+    hint: "互斥循环的阶等于各长度的最小公倍数。",
+    publicParams: { ord: c.ord },
+  };
+};
+
+const complexRootsSum: Gen = () => {
+  // Non-real 5th roots of unity sum to -1 (since all sum to 0, exclude 1)
+  const n = pick([5, 7]);
+  // sum of all = 0, real root is 1, non-real sum = -1
+  return {
+    type: "complex.roots.sum",
+    prompt: `方程 $z^{${n}}=1$ 的所有**非实**根之和是多少？`,
+    answer: "-1",
+    hint: "全体单位根之和为 $0$。",
+    publicParams: { n },
+  };
+};
+
+/* ───────── 穷理 · deep ───────── */
+
+/**
+ * Deep puzzles must not be obtained merely by enlarging
+ * the numerical parameters of a mathematical-level puzzle.
+ *
+ * A deep puzzle should normally require at least one of:
+ * - discovering an invariant;
+ * - combining two distinct ideas;
+ * - deriving an intermediate lemma;
+ * - introducing an auxiliary quantity or recurrence;
+ * - counting a complement / quotient / orbit;
+ * - reducing the problem to a hidden algebraic structure.
+ *
+ * Boolean answers are forbidden.
+ */
+
+const numberCrtDivisibility: Gen = () => {
+  // n≡1 mod 4, ≡2 mod 5, ≡3 mod 7, and 11|n
+  const mods = [4, 5, 7];
+  const residues = [1, 2, 3];
+  const base = chineseRemainder(mods, residues);
+  const M = 4 * 5 * 7;
+  // n = base + M t, need n ≡ 0 mod 11
+  let t = 0;
+  let n = base;
+  while (n % 11 !== 0) {
+    t++;
+    n = base + M * t;
+    if (t > 20) break;
+  }
+  return {
+    type: "number.crt.divisibility",
+    prompt: `求最小正整数 $n$，满足\n$$\nn\\equiv 1\\pmod{4},\\qquad n\\equiv 2\\pmod{5},\\qquad n\\equiv 3\\pmod{7},\n$$\n并且 $11\\mid n$。`,
+    answer: String(n),
+    publicParams: { base, M, n },
+  };
+};
+
+const numberDivisorsSquare: Gen = () => {
+  // Smallest n with exactly 15 divisors: 15=15 → p^{14} huge; 15=5*3 → p^4 q^2
+  // Compare p^4 q^2 forms: minimize → 2^4 3^2=144, 3^4 2^2=324, 2^4 5^2=400, ...
+  return {
+    type: "number.divisors.square",
+    prompt: `求最小正整数 $n$，使 $n$ 恰好有 $15$ 个正因数。`,
+    answer: "144",
+    hint: "$15=15$ 或 $5\\cdot 3$，比较 $p^{14}$ 与 $p^4 q^2$。",
+    publicParams: { ans: 144 },
+  };
+};
+
+const numberTrailingFactorial: Gen = () => {
+  const n = pick([25, 50, 100]);
+  let f = BigInt(1);
+  for (let i = 2; i <= n; i++) f *= BigInt(i);
+  while (f % BigInt(10) === BigInt(0)) f /= BigInt(10);
+  const digit = Number(f % BigInt(10));
+  return {
+    type: "number.trailing.factorial",
+    prompt: `考虑 $${n}!$ 的十进制表示。去掉末尾所有连续的零之后，所得整数的个位数是多少？`,
+    answer: String(digit),
+    publicParams: { n, digit },
+  };
+};
+
+const combinatoricsDerangementPartial: Gen = () => {
+  const n = pick([6, 7, 8]);
+  const k = 2; // exactly k fixed points
+  // C(n,k) * D_{n-k}
+  const ans = binom(n, k) * derangement(n - k);
+  return {
+    type: "combinatorics.derangement.partial",
+    prompt: `$${n}$ 个人各有一顶帽子。随机重新分配帽子，要求**恰好**有 $${k}$ 个人拿到自己的帽子。这样的分配共有多少种？`,
+    answer: String(ans),
+    hint: "先选固定点，再对剩余做完全错排。",
+    publicParams: { n, k, ans },
+  };
+};
+
+const combinatoricsGridForbidden: Gen = () => {
+  const R = randInt(5, 8);
+  const U = randInt(5, 7);
+  const fx = randInt(2, R - 2);
+  const fy = randInt(2, U - 2);
+  const total = binom(R + U, R);
+  const bad = binom(fx + fy, fx) * binom(R - fx + U - fy, R - fx);
+  const ans = total - bad;
+  return {
+    type: "combinatorics.grid.forbidden",
+    prompt: `从 $(0,0)$ 走到 $(${R},${U})$，每步只能向右或向上一格，且路径不得经过 $(${fx},${fy})$。共有多少条最短路径？`,
+    answer: String(ans),
+    hint: "总数减去经过禁点的路径。",
+    publicParams: { R, U, fx, fy, ans },
+  };
+};
+
+const combinatoricsBurnsideNecklace: Gen = () => {
+  // 3 red + 3 blue, rotations only on hexagon → 4
+  return {
+    type: "combinatorics.burnside.necklace",
+    prompt: `用 $3$ 个红珠、$3$ 个蓝珠组成一个圆形项链，只把旋转视为相同（翻转视为不同），问有多少种不同项链？`,
+    answer: "4",
+    hint: "Burnside：对循环群 $C_6$ 平均不动点。",
+    publicParams: { ans: 4 },
+  };
+};
+
+const laCommutant: Gen = () => {
+  return {
+    type: "linearalgebra.commutant",
+    prompt: `求所有满足 $AX=XA$ 的 $2\\times 2$ 实矩阵 $X$ 所成向量空间的维数，其中\n$$\nA=${fmtMatrix([
+      [1, 1],
+      [0, 1],
+    ])}.\n$$`,
+    answer: "2",
+    hint: "解矩阵方程；与 $A$ 交换的矩阵是 $A$ 的多项式。",
+    publicParams: { ans: 2 },
+  };
+};
+
+const laProjection: Gen = () => {
+  return {
+    type: "linearalgebra.projection",
+    prompt: `设 $P,Q$ 均为 $\\mathbb R^7$ 上的投影算子（$P^2=P$，$Q^2=Q$），满足 $PQ=QP=0$，$\\operatorname{tr}P=2$，$\\operatorname{tr}Q=3$。求 $\\dim(\\ker P\\cap\\ker Q)$。`,
+    answer: "2",
+    hint: "$\\operatorname{tr}P=\\operatorname{rank}P$；由 $PQ=0$ 得 $\\operatorname{im}Q\\subset\\ker P$。",
+    publicParams: { ans: 2 },
+  };
+};
+
+const polynomialInterpolation: Gen = () => {
+  // Cubic via finite differences — generate a known cubic
+  const a = randInt(1, 2);
+  const b = randInt(-2, 3);
+  const c = randInt(-3, 4);
+  const d = randInt(1, 5);
+  const P = (x: number) => a * x ** 3 + b * x ** 2 + c * x + d;
+  const xs = [0, 1, 2, 3];
+  const ys = xs.map(P);
+  const xq = 6;
+  return {
+    type: "polynomial.interpolation",
+    prompt: `已知三次多项式 $P$ 满足\n$$\nP(0)=${ys[0]},\\quad P(1)=${ys[1]},\\quad P(2)=${ys[2]},\\quad P(3)=${ys[3]}.\n$$\n求 $P(${xq})$。`,
+    answer: String(P(xq)),
+    hint: "有限差分或 Newton 插值。",
+    publicParams: { ys, xq, ans: P(xq) },
+  };
+};
+
+const analysisIntegralSymmetry2: Gen = () => {
+  return {
+    type: "analysis.integral.symmetry2",
+    prompt: `计算\n$$\nI=\\int_0^1\\frac{x^3}{x^3+(1-x)^3}\\,dx.\n$$`,
+    answer: "1/2",
+    hint: "代换 $x\\mapsto 1-x$，与原式相加。",
+    publicParams: { ans: "1/2" },
+  };
+};
+
+const analysisFunctionalIteration: Gen = () => {
+  // f(x)+2f(1-x)=x^2+1 → f(0)=1
+  return {
+    type: "analysis.functional.iteration",
+    prompt: `连续函数 $f:\\mathbb R\\to\\mathbb R$ 满足\n$$\nf(x)+2f(1-x)=x^2+1.\n$$\n求 $f(0)$。`,
+    answer: "1",
+    hint: "将 $x$ 换成 $1-x$，与原方程联立。",
+    publicParams: { ans: 1 },
+  };
+};
+
+const probabilityExpectedStopping: Gen = () => {
+  // E[wait for HH] = 6 for fair coin
+  return {
+    type: "probability.expected.stopping",
+    prompt: `反复独立掷公平硬币，直到第一次出现连续两个正面为止。停止时掷硬币次数的期望是多少？`,
+    answer: "6",
+    hint: "设状态为当前后缀匹配长度，列期望方程组。",
+    publicParams: { ans: 6 },
+  };
+};
+
+const probabilityRandomWalk: Gen = () => {
+  const a = 0;
+  const b = pick([5, 6, 8]);
+  const start = randInt(1, b - 1);
+  // P(hit a before b) = (b-start)/(b-a)
+  const ans = rat(b - start, b - a);
+  return {
+    type: "probability.randomwalk",
+    prompt: `一只粒子从整数点 $${start}$ 出发，每步以 $1/2$ 的概率向左或向右移动 $1$。到达 $${a}$ 或 $${b}$ 时停止。到达 $${b}$ **之前**先到达 $${a}$ 的概率是多少？（写成分数。）`,
+    answer: ans,
+    hint: "公平赌徒破产 / 调和函数。",
+    publicParams: { a, b, start, ans },
+  };
+};
+
+const graphSpanningTree: Gen = () => {
+  return {
+    type: "graph.spanningtree",
+    prompt: `完全图 $K_4$ 删除一条边后，有多少棵生成树？`,
+    answer: "8",
+    hint: "Cayley：$K_n$ 有 $n^{n-2}$ 棵生成树；再按边的对称性计数。",
+    publicParams: { ans: 8 },
+  };
+};
+
+const groupHomomorphism: Gen = () => {
+  const pairs = [
+    [12, 18],
+    [8, 12],
+    [15, 25],
+    [9, 15],
+  ];
+  const [m, n] = pick(pairs);
+  const ans = gcd(m, n);
+  return {
+    type: "group.homomorphism",
+    prompt: `群同态\n$$\n\\varphi:\\mathbb Z_{${m}}\\to\\mathbb Z_{${n}}\n$$\n共有多少个？`,
+    answer: String(ans),
+    hint: "$\\varphi(1)=a$ 须满足 $m a=0$ 于 $\\mathbb Z_n$。",
+    publicParams: { m, n, ans },
   };
 };
 
 /* ───────── Pools ───────── */
 
-const ALL: Gen[] = [
-  coinFlipInsight,
-  chessboardInsight,
-  sumModInsight,
-  handshakeInsight,
-  modularCrt,
-  modularRemainder,
-  modularPower,
-  lastDigit,
-  sequenceRecurrence,
-  sequenceArithmetic,
-  sequenceGeometric,
-  sequenceFibonacciLike,
-  sequenceDigitSum,
-  combinatoricsLattice,
-  combinatoricsChoose,
-  combinatoricsPermute,
-  combinatoricsSubset,
-  combinatoricsHandshake,
-  combinatoricsPascal,
-  graphPathCount,
-  graphDegreeSum,
-  tournamentGames,
-  logicLinear,
-  logicAges,
-  logicChickens,
-  logicGcdLcm,
-  logicDivisors,
-  logicPigeonhole,
-  geometryTriangle,
-  geometryIsosceles,
-  geometryRectangle,
-  geometryArea,
-  geometryParallel,
-  geometryCircle,
-  geometryPythagorean,
-  algebraLinear,
-  algebraMean,
-  algebraFactorial,
-  algebraPercent,
-  matrixDet2,
-];
-
 const THOUGHTFUL: Gen[] = [
-  geometryTriangle,
-  geometryRectangle,
-  geometryArea,
-  geometryIsosceles,
-  combinatoricsLattice,
-  combinatoricsSubset,
-  combinatoricsHandshake,
-  modularRemainder,
-  sequenceArithmetic,
-  sequenceDigitSum,
-  algebraLinear,
-  algebraPercent,
-  logicAges,
-  logicPigeonhole,
-  lastDigit,
+  laRank,
+  laDetStructure,
+  numberModInverse,
+  numberCongruenceLinear,
+  numberValuation,
+  combinatoricsInclusion2,
+  combinatoricsWords,
+  graphDegreeMissing,
+  analysisLimitStandard,
+  analysisIntegralSymmetry,
+  analysisDerivativeInverse,
+  algebraPolynomialComplex,
+  probabilityHypergeom,
+  setCardinalityIE,
+  sequenceTelescoping,
 ];
 
 const MATHEMATICAL: Gen[] = [
-  modularCrt,
-  modularPower,
-  lastDigit,
-  coinFlipInsight,
-  chessboardInsight,
-  handshakeInsight,
-  sequenceRecurrence,
-  sequenceFibonacciLike,
-  sequenceGeometric,
-  combinatoricsLattice,
-  combinatoricsChoose,
-  combinatoricsPascal,
-  combinatoricsPermute,
-  graphDegreeSum,
-  tournamentGames,
-  logicChickens,
-  logicGcdLcm,
-  logicDivisors,
-  geometryPythagorean,
-  geometryCircle,
-  geometryParallel,
-  algebraMean,
-  algebraFactorial,
-  matrixDet2,
-  sumModInsight,
+  laMatrixPower,
+  laTraceEigen,
+  laKernelDim,
+  numberCrtHidden,
+  numberOrder,
+  numberSquareMod,
+  combinatoricsNoAdjacent,
+  combinatoricsSurjection,
+  combinatoricsCircular,
+  graphWalksMatrix,
+  graphTreeLeaves,
+  analysisLimitParameter,
+  analysisIntegralParameter,
+  analysisRecursiveIntegral,
+  probabilityConditioning,
+  polynomialVieta,
+  algebraGroupOrder,
+  complexRootsSum,
 ];
 
 const DEEP: Gen[] = [
-  modularCrt,
-  modularPower,
-  coinFlipInsight,
-  chessboardInsight,
-  sumModInsight,
-  handshakeInsight,
-  sequenceRecurrence,
-  combinatoricsChoose,
-  combinatoricsPermute,
-  combinatoricsPascal,
-  graphPathCount,
-  logicLinear,
-  logicGcdLcm,
-  geometryPythagorean,
-  geometryCircle,
-  matrixDet2,
-  lastDigit,
+  numberCrtDivisibility,
+  numberDivisorsSquare,
+  numberTrailingFactorial,
+  combinatoricsDerangementPartial,
+  combinatoricsGridForbidden,
+  combinatoricsBurnsideNecklace,
+  laCommutant,
+  laProjection,
+  polynomialInterpolation,
+  analysisIntegralSymmetry2,
+  analysisFunctionalIteration,
+  probabilityExpectedStopping,
+  probabilityRandomWalk,
+  graphSpanningTree,
+  groupHomomorphism,
 ];
 
 export function generatePuzzle(difficulty: PuzzleDifficulty): PuzzleInstance {
@@ -784,40 +961,63 @@ export function generatePuzzle(difficulty: PuzzleDifficulty): PuzzleInstance {
       : difficulty === "mathematical"
         ? MATHEMATICAL
         : DEEP;
-  // Strict pools only — never dip into ALL (refresh must keep difficulty).
   const gen = pick(pool);
-  return gen(difficulty);
+  const puzzle = gen(difficulty);
+  return {
+    ...puzzle,
+    answer: normalizeAnswer(puzzle.answer),
+  };
 }
 
-/** Exposed for tests / diagnostics. */
 export function puzzleCatalogSize(): number {
-  return ALL.length;
+  return THOUGHTFUL.length + MATHEMATICAL.length + DEEP.length;
 }
 
+export function puzzlePoolSizes(): Record<PuzzleDifficulty, number> {
+  return {
+    thoughtful: THOUGHTFUL.length,
+    mathematical: MATHEMATICAL.length,
+    deep: DEEP.length,
+  };
+}
+
+/**
+ * Canonicalize answers: integers, reduced rationals "p/q", and "a+bi".
+ * YES/NO is intentionally not supported for gate grading.
+ */
 export function normalizeAnswer(input: string): string {
-  const raw = input.trim().replace(/\s+/g, " ");
-  const upper = raw.toUpperCase();
-  if (
-    upper === "YES" ||
-    upper === "Y" ||
-    raw === "是" ||
-    raw === "对" ||
-    raw === "可以"
-  ) {
-    return "YES";
+  const raw = input.trim().replace(/\s+/g, "");
+
+  // Complex: a+bi, a-bi, bi, -bi, a
+  const complex = raw.match(/^([+-]?\d+)?([+-]\d*)i$/i);
+  if (complex) {
+    const real = complex[1] ? Number(complex[1]) : 0;
+    let imagStr = complex[2];
+    if (imagStr === "+" || imagStr === "") imagStr = "+1";
+    if (imagStr === "-") imagStr = "-1";
+    const imag = Number(imagStr);
+    if (imag === 0) return String(real);
+    if (real === 0) return imag === 1 ? "i" : imag === -1 ? "-i" : `${imag}i`;
+    const imagPart =
+      imag === 1 ? "+i" : imag === -1 ? "-i" : imag > 0 ? `+${imag}i` : `${imag}i`;
+    return `${real}${imagPart}`;
   }
-  if (
-    upper === "NO" ||
-    upper === "N" ||
-    raw === "否" ||
-    raw === "不" ||
-    raw === "不可以"
-  ) {
-    return "NO";
+  // Also accept a+bi with explicit +
+  const complex2 = raw.match(/^([+-]?\d+)\+(\d+)i$/i);
+  if (complex2) {
+    return normalizeAnswer(`${complex2[1]}+${complex2[2]}i`);
   }
-  // Allow "12.0" style for half-integer areas written as 12.0 — normalize ints
+
+  // Rational p/q
+  const frac = raw.match(/^([+-]?\d+)\/(\d+)$/);
+  if (frac) {
+    return rat(Number(frac[1]), Number(frac[2]));
+  }
+
+  // Integer (possibly with .0)
   if (/^-?\d+(\.0+)?$/.test(raw)) {
     return String(Number(raw));
   }
-  return upper;
+
+  return raw.toUpperCase();
 }
