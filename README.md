@@ -41,7 +41,7 @@ pnpm dev
 
 ```bash
 pnpm build
-pm2 start ecosystem.config.cjs   # process name: cleaf, port 3460
+pm2 start ecosystem.config.cjs   # process name: cleaf; PORT from .env.production (default 3460)
 ```
 
 ## 文档

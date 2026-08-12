@@ -7,7 +7,7 @@ Product name stays **CipherLeaf**. Short handle:
 | GitHub | `vanabel/cleaf` |
 | PM2 process | `cleaf` |
 | Suggested public URL | `https://cleaf.vanabel.cn` |
-| Upstream port | `3460` |
+| Upstream port | `PORT` in `.env.production` (default `3460`) |
 
 ## 1. First deploy on NAS
 
@@ -20,9 +20,15 @@ cd cleaf
 corepack enable
 pnpm install
 
+# Machine-local env (gitignored). Example:
+cat > .env.production <<'EOF'
+PORT=13460
+NEXT_PUBLIC_SITE_URL=https://cleaf.vanabel.cn
+EOF
+
 # Required for absolute Open Graph / WeChat link-preview URLs.
 # NEXT_PUBLIC_* is inlined at **build** time — PM2 env alone is not enough.
-export NEXT_PUBLIC_SITE_URL=https://cleaf.vanabel.cn
+# If already in .env.production, Next will pick it up during build.
 pnpm build
 
 mkdir -p data   # SQLite lives here; never commit
@@ -30,21 +36,22 @@ pm2 start ecosystem.config.cjs
 pm2 save
 ```
 
-Or put the same value in `.env.production` next to the app before `pnpm build`.
+`ecosystem.config.cjs` reads `PORT` from `.env.production` (fallback `3460`). Do **not** edit the committed port in git for a single NAS.
 
-Reverse-proxy `cleaf.vanabel.cn` → `http://127.0.0.1:3460` (HTTPS at the proxy).
+Reverse-proxy `cleaf.vanabel.cn` → `http://127.0.0.1:$PORT` (HTTPS at the proxy).
 
 ## 2. Update
 
 ```bash
 cd /volume1/web/cleaf
+# If pull complains about local ecosystem.config.cjs edits: keep PORT in .env.production, then
+#   git checkout -- ecosystem.config.cjs
 git pull
 pnpm install
-export NEXT_PUBLIC_SITE_URL=https://cleaf.vanabel.cn   # keep in sync with public origin
+# Ensure .env.production still has NEXT_PUBLIC_SITE_URL + PORT
 pnpm build
 pm2 restart cleaf
 ```
-
 `pnpm install` on the NAS no longer needs a C++ toolchain — storage uses Node's built-in `node:sqlite` (Node 22+).
 
 Do not copy `node_modules` from a Mac; install on the NAS so optional native deps (if any) match Linux.
