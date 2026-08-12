@@ -34,6 +34,13 @@ async function readResponseJson(res: Response): Promise<Record<string, unknown>>
   }
 }
 
+function jsonErrorMessage(
+  json: Record<string, unknown>,
+  fallback: string,
+): string {
+  return typeof json.error === "string" && json.error ? json.error : fallback;
+}
+
 type ChallengePayload = {
   title: string;
   gateMode: string;
@@ -79,7 +86,7 @@ export function GateCeremony() {
           cache: "no-store",
         });
         const json = await readResponseJson(res);
-        if (!res.ok) throw new Error(json.error || "门禁不可用");
+        if (!res.ok) throw new Error(jsonErrorMessage(json, "门禁不可用"));
         if (!cancelled) {
           setData(json as ChallengePayload);
           setPhase("ceremony");
@@ -113,7 +120,7 @@ export function GateCeremony() {
         }),
       });
       const json = await readResponseJson(res);
-      if (!res.ok) throw new Error(json.error || "解锁失败");
+      if (!res.ok) throw new Error(jsonErrorMessage(json, "解锁失败"));
       setGranted(json as {
         capsuleToken: string;
         fingerprint: string;
