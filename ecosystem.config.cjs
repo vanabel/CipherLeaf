@@ -12,6 +12,8 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         PORT: 3460,
+        // NEXT_PUBLIC_SITE_URL must be set at `pnpm build` (see docs/DEPLOY.md).
+        // Listing it only here does NOT rewrite already-built OG absolute URLs.
       },
     },
   ],

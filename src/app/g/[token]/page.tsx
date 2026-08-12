@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { GateCeremony } from "@/components/gate/GateCeremony";
-import { getDocumentByGateToken } from "@/lib/capability/service";
 import {
   buildShareOgDescription,
   buildShareOgTitle,
@@ -12,18 +11,21 @@ type Props = PageProps<"/g/[token]">;
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { token } = await params;
-  const document = getDocumentByGateToken(token);
-  const title = document?.title ?? null;
-  const ogTitle = buildShareOgTitle(title);
-  const description = buildShareOgDescription(title);
+  const ogTitle = buildShareOgTitle();
+  const description = buildShareOgDescription();
+  const path = `/g/${token}`;
 
   return {
     title: ogTitle,
     description,
+    alternates: {
+      canonical: path,
+    },
     openGraph: {
       type: "website",
       locale: "zh_CN",
       siteName: "CipherLeaf",
+      url: path,
       title: ogTitle,
       description,
       images: [
@@ -32,6 +34,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
           width: 1200,
           height: 630,
           alt: "CipherLeaf 封存信封",
+          type: "image/png",
         },
       ],
     },
@@ -41,10 +44,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       description,
       images: ["/og-envelope.png"],
     },
-    // Avoid indexing ephemeral gate URLs; still allow share crawlers.
+    // No search indexing for ephemeral gates; do not block share crawlers.
     robots: {
       index: false,
-      follow: false,
+      follow: true,
     },
   };
 }

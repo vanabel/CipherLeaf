@@ -19,12 +19,18 @@ cd cleaf
 
 corepack enable
 pnpm install
+
+# Required for absolute Open Graph / WeChat link-preview URLs.
+# NEXT_PUBLIC_* is inlined at **build** time — PM2 env alone is not enough.
+export NEXT_PUBLIC_SITE_URL=https://cleaf.vanabel.cn
 pnpm build
 
 mkdir -p data   # SQLite lives here; never commit
 pm2 start ecosystem.config.cjs
 pm2 save
 ```
+
+Or put the same value in `.env.production` next to the app before `pnpm build`.
 
 Reverse-proxy `cleaf.vanabel.cn` → `http://127.0.0.1:3460` (HTTPS at the proxy).
 
@@ -34,6 +40,7 @@ Reverse-proxy `cleaf.vanabel.cn` → `http://127.0.0.1:3460` (HTTPS at the proxy
 cd /volume1/web/cleaf
 git pull
 pnpm install
+export NEXT_PUBLIC_SITE_URL=https://cleaf.vanabel.cn   # keep in sync with public origin
 pnpm build
 pm2 restart cleaf
 ```

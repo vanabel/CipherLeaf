@@ -27,22 +27,23 @@ export function recallGateUrl(manageSecret: string): string | null {
   }
 }
 
-/** Public OG/link-preview title — no secrets. */
-export function buildShareOgTitle(title?: string | null): string {
-  const t = title?.trim();
-  if (t) return `《${t}》· CipherLeaf 封存手稿`;
+/**
+ * Public OG/link-preview title — envelope exterior only, no secrets.
+ *
+ * Deliberately omits manuscript titles: WeChat (and similar crawlers) often
+ * drop link cards when OG text trips content filters, and CipherLeaf's
+ * typical titles are exactly the kind that get filtered. Recipients still
+ * see the real title inside the share letter / after opening the gate.
+ */
+export function buildShareOgTitle(_title?: string | null): string {
   return "CipherLeaf · 一份已封存的手稿";
 }
 
 /**
  * Public OG/link-preview description — envelope tone only.
- * Never include passphrase, invite code, manage URL, or ciphertext.
+ * Never include passphrase, invite code, manage URL, ciphertext, or titles.
  */
-export function buildShareOgDescription(title?: string | null): string {
-  const t = title?.trim();
-  if (t) {
-    return `一份手稿《${t}》已为你封存；打开后依门禁提示启封。正文经客户端加密，服务器不存明文。`;
-  }
+export function buildShareOgDescription(_title?: string | null): string {
   return "一份手稿已为你封存；打开后依门禁提示启封。正文经客户端加密，服务器不存明文。";
 }
 

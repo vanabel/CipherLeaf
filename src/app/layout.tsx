@@ -35,6 +35,7 @@ export const metadata: Metadata = {
     type: "website",
     locale: "zh_CN",
     siteName: "CipherLeaf",
+    url: "/",
     title: "CipherLeaf — 为审慎读者准备的加密知识",
     description:
       "零明文托管、数学挑战门禁、短期阅读胶囊，以及公开披露的个体化水印——面向敏感原创写作。",
@@ -44,6 +45,7 @@ export const metadata: Metadata = {
         width: 1200,
         height: 630,
         alt: "CipherLeaf 封存信封",
+        type: "image/png",
       },
     ],
   },
