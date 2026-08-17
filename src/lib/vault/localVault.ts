@@ -1,5 +1,7 @@
 /** Local encrypted bookmark vault — no server account. */
 
+import { promptSecret } from "@/lib/vault/promptSecret";
+
 export type VaultEntryStatus = "active" | "destroyed";
 
 export type VaultEntry = {
@@ -306,7 +308,7 @@ export async function promptVerifyVaultPassphrase(
   | { status: "error"; message: string }
 > {
   if (!vaultExists()) return { status: "skip" };
-  const pwd = window.prompt(message);
+  const pwd = await promptSecret(message);
   if (pwd == null) return { status: "cancel" };
   try {
     await unlockVault(pwd);
@@ -388,7 +390,7 @@ export async function promptSaveToVault(entry: {
   gateUrl?: string;
 }): Promise<"ok" | "cancel" | "error"> {
   const exists = vaultExists();
-  const pwd = window.prompt(
+  const pwd = await promptSecret(
     exists
       ? "输入本机书签包口令以保存："
       : "创建本机书签包：设置一个口令（至少 6 位）：",

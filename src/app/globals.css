@@ -334,6 +334,74 @@ body {
   overflow-x: auto;
 }
 
+.vault-secret-host {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+}
+
+.vault-secret-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(21, 32, 28, 0.28);
+}
+
+.vault-secret-card {
+  position: relative;
+  width: min(26rem, 100%);
+  border: 1px solid var(--line);
+  background: var(--paper);
+  padding: 1.25rem 1.35rem 1.1rem;
+  box-shadow: 0 18px 48px rgba(21, 32, 28, 0.12);
+}
+
+.vault-secret-title {
+  margin: 0 0 0.85rem;
+  color: var(--ink);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.vault-secret-input {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--mist) 40%, var(--paper));
+  padding: 0.55rem 0.7rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.95rem;
+  outline: none;
+}
+
+.vault-secret-input:focus {
+  border-color: var(--moss);
+}
+
+.vault-secret-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 0.9rem;
+}
+
+.vault-secret-cancel,
+.vault-secret-ok {
+  cursor: pointer;
+  border: 1px solid var(--line);
+  padding: 0.4rem 0.85rem;
+  font-size: 0.875rem;
+  background: transparent;
+  color: var(--ink);
+}
+
+.vault-secret-ok {
+  border-color: var(--moss);
+  background: var(--moss);
+  color: var(--paper);
+}
+
 @media print {
   body * {
     display: none !important;
