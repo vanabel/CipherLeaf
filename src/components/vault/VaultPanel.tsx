@@ -21,6 +21,7 @@ export function VaultPanel() {
   const [unlocked, setUnlocked] = useState(false);
   const [entries, setEntries] = useState<VaultEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<"unlock" | "create">("unlock");
 
@@ -44,7 +45,8 @@ export function VaultPanel() {
       } else {
         let list = await unlockVault(passphrase);
         try {
-          list = await syncVaultDestroyedStatus(passphrase);
+          const report = await syncVaultDestroyedStatus(passphrase);
+          list = report.entries;
         } catch (syncErr) {
           // Network/probe failures keep the unlocked list; passphrase failures
           // should not happen after unlock, but never clear entries on sync error.
@@ -201,6 +203,7 @@ export function VaultPanel() {
             onClick={async () => {
               setBusy(true);
               setError(null);
+              setNotice(null);
               try {
                 const verified = await promptVerifyVaultPassphrase(
                   "输入书签包口令以检查远端状态：",
@@ -212,9 +215,26 @@ export function VaultPanel() {
                   setError(verified.message);
                   return;
                 }
-                const next = await syncVaultDestroyedStatus(verified.passphrase);
-                setEntries(next);
+                const report = await syncVaultDestroyedStatus(
+                  verified.passphrase,
+                );
+                setEntries(report.entries);
                 setPassphrase(verified.passphrase);
+                if (report.newlyDestroyed > 0) {
+                  setNotice(
+                    `新标记 ${report.newlyDestroyed} 条为已销毁（控制台已不存在）。`,
+                  );
+                } else if (report.probed === 0) {
+                  setNotice("没有可探问的控制台链接。");
+                } else if (report.unreachable > 0) {
+                  setNotice(
+                    `已探问 ${report.probed} 条；${report.unreachable} 条暂时无法联系远端，未改动。`,
+                  );
+                } else {
+                  setNotice(
+                    `已探问 ${report.probed} 条，远端均仍有效。`,
+                  );
+                }
               } catch (err) {
                 setError(err instanceof Error ? err.message : "检查失败");
               } finally {
@@ -244,6 +264,8 @@ export function VaultPanel() {
               setUnlocked(false);
               setPassphrase("");
               setEntries([]);
+              setNotice(null);
+              setError(null);
             }}
           >
             锁定
@@ -251,7 +273,11 @@ export function VaultPanel() {
         </div>
       </header>
 
+      <p className="text-xs text-ink-soft">
+        「检查远端状态」会向各条书签的控制台地址探问：若手稿已销毁（接口返回 404），本机条目会划掉并标「已销毁」。解锁时也会自动检查一次；远端仍有效时列表看起来不会变。
+      </p>
       {error && <p className="text-sm text-warn">{error}</p>}
+      {notice && <p className="text-sm text-ok">{notice}</p>}
 
       <ul className="divide-y divide-line border border-line bg-paper/70">
         {entries.length === 0 && (

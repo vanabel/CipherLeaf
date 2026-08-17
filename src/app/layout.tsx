@@ -31,6 +31,9 @@ export const metadata: Metadata = {
   title: "CipherLeaf — 为审慎读者准备的加密知识",
   description:
     "零明文托管、数学挑战门禁、短期阅读胶囊，以及公开披露的个体化水印——面向敏感原创写作。",
+  icons: {
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+  },
   openGraph: {
     type: "website",
     locale: "zh_CN",

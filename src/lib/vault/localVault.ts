@@ -218,38 +218,70 @@ export async function markVaultEntryDestroyed(
   return { entries: next, matched };
 }
 
+export type VaultSyncReport = {
+  entries: VaultEntry[];
+  probed: number;
+  newlyDestroyed: number;
+  unreachable: number;
+  skipped: number;
+};
+
+function manageProbeUrl(manageUrl: string, secret: string): string {
+  try {
+    const origin =
+      typeof window !== "undefined"
+        ? window.location.origin
+        : "http://cipherleaf.local";
+    const u = new URL(manageUrl, origin);
+    return `${u.origin}/api/manage/${encodeURIComponent(secret)}`;
+  } catch {
+    return `/api/manage/${encodeURIComponent(secret)}`;
+  }
+}
+
 /** Probe manage APIs and mark missing documents as destroyed. */
 export async function syncVaultDestroyedStatus(
   passphrase: string,
-): Promise<VaultEntry[]> {
+): Promise<VaultSyncReport> {
   const entries = await unlockVault(passphrase);
   let changed = false;
   const now = Date.now();
   const next: VaultEntry[] = [];
+  let probed = 0;
+  let newlyDestroyed = 0;
+  let unreachable = 0;
+  let skipped = 0;
   for (const e of entries) {
     if (e.status === "destroyed") {
+      skipped += 1;
       next.push(e);
       continue;
     }
     const secret = manageSecretFromUrl(e.manageUrl);
     if (!secret) {
+      skipped += 1;
       next.push(e);
       continue;
     }
+    probed += 1;
     try {
-      const res = await fetch(`/api/manage/${secret}`, { cache: "no-store" });
+      const res = await fetch(manageProbeUrl(e.manageUrl, secret), {
+        cache: "no-store",
+      });
       if (res.status === 404) {
         changed = true;
+        newlyDestroyed += 1;
         next.push({ ...e, status: "destroyed", destroyedAt: now });
       } else {
         next.push(e);
       }
     } catch {
+      unreachable += 1;
       next.push(e);
     }
   }
   if (changed) await saveVaultEntries(passphrase, next);
-  return next;
+  return { entries: next, probed, newlyDestroyed, unreachable, skipped };
 }
 
 export async function removeVaultEntry(

@@ -38,9 +38,7 @@ type Created = {
 
 export function CreateForm() {
   const [title, setTitle] = useState("");
-  const [content, setContent] = useState(
-    "# 一份受保护的手稿\n\n在此写下敏感笔记。服务器只会收到密文。\n",
-  );
+  const [content, setContent] = useState("");
   const [preset, setPreset] = useState<SecurityPreset>("sensitive");
   const [difficulty, setDifficulty] = useState<Difficulty>(
     PRESETS.sensitive.difficulty,

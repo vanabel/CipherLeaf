@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CipherLeafMark } from "@/components/brand/CipherLeafMark";
 import { CreateForm } from "@/components/create/CreateForm";
 
 export default function HomePage() {
@@ -14,10 +15,11 @@ export default function HomePage() {
       </div>
       <div className="mx-auto mb-12 max-w-2xl space-y-6 text-center sm:mb-16">
         <div
-          className="mx-auto h-10 w-10 rounded-full border border-leaf/40"
+          className="mx-auto w-fit"
           style={{ animation: "breathe 4.5s ease-in-out infinite" }}
-          aria-hidden
-        />
+        >
+          <CipherLeafMark className="h-11 w-11 text-moss" />
+        </div>
         <p className="font-mono text-xs tracking-[0.35em] text-moss uppercase">
           CipherLeaf
         </p>
